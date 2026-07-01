@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skilllayer"
+version = "0.1.0"
+description = "A deterministic execution layer for Claude Code agents."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Nicolas Baranov" }]
+license = { text = "BSL-1.1" }
+dependencies = ["psutil>=5.9"]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+browser = ["playwright>=1.40"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+skilllayer = "skilllayer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["skilllayer*"]

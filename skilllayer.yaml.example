@@ -1,0 +1,11 @@
+router:
+  mode: cascade
+  local_model: phi3:mini
+  backend: ollama
+
+execution:
+  dry_run: false
+  run_tests: true
+
+logging:
+  log_dir: runs/skilllayer_logs

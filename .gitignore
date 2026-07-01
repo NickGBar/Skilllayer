@@ -1,0 +1,27 @@
+.DS_Store
+.ruff_cache/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Generated experiment outputs and checkpoints.
+runs/
+
+# SkillLayer memory store — context is gitignored, decisions/preferences are opt-in
+.skilllayer/context/
+.skilllayer/.state.json
+.skilllayer/test_speed_baseline.json
+.skilllayer/memory_baseline.json
+.skilllayer/profile_baseline.json
+.skilllayer/repo_activity_snapshot.json
+
+# Environment files
+.env
+*.env
+
+# Private research infrastructure — benchmark harness and internal reports
+tests/test_benchmark_harness.py
+BENCHMARK_FINDINGS.md
+FINAL_RELIABILITY_SNAPSHOT.md
+PRE_USER_TEST_READINESS.md
+WORKFLOW_RELIABILITY_REPORT.md
