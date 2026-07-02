@@ -55,11 +55,5 @@ or unreviewed telemetry exports.
 - Would you pay for this if it saved cost or time?
 - What would need to improve before you would use it regularly?
 
-## Optional Telemetry
-
-- Did you generate an anonymous telemetry export?
-- Did you review it before sharing?
-- Is the export attached?
-
-Please remember: telemetry is local by default, export is opt-in, and there is
-no automatic upload.
+Please remember: telemetry is local by default and there is no automatic
+upload.
