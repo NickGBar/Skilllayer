@@ -23,7 +23,7 @@ Structured JSON output. Sub-second execution.
 
 ## What's Inside
 
-33 workflows across 9 categories. 1200+ tests. Zero LLM calls on any workflow.
+32 workflows across 9 categories. 1200+ tests. Zero LLM calls on any workflow.
 
 | Category | Workflows |
 |----------|-----------|
@@ -43,6 +43,7 @@ Structured JSON output. Sub-second execution.
 git clone https://github.com/NickGBar/Skilllayer.git
 cd Skilllayer
 ./scripts/install.sh
+source .venv/bin/activate
 python -m skilllayer doctor
 ```
 
@@ -54,21 +55,30 @@ SkillLayer exposes 30 MCP tools for Claude Code. See `docs/CLAUDE_CODE_SETUP.md`
 {
   "mcpServers": {
     "skilllayer": {
-      "command": "python",
-      "args": ["-m", "skilllayer.mcp_server"]
+      "command": "/ABSOLUTE/PATH/TO/PROJECT/.venv/bin/python",
+      "args": ["-m", "skilllayer.mcp_server"],
+      "cwd": "/ABSOLUTE/PATH/TO/PROJECT"
     }
   }
 }
 ```
+
+Use an absolute path to the venv's Python — MCP clients generally launch the
+server without your shell's venv active. Run `python scripts/generate_mcp_config.py`
+after activating your venv to generate this with the real paths filled in.
 
 ## Why Zero LLM Calls?
 
 Every routine task Claude reasons through costs tokens. SkillLayer replaces
 reasoning with deterministic execution:
 
-- git status → `skilllayer_git_status` → structured JSON, 0 LLM calls
-- find function → `skilllayer_run` → structured JSON, 0 LLM calls
-- run tests → `skilllayer_run` → structured JSON, 0 LLM calls
+- `skilllayer_run(task="git status")` → structured JSON, 0 LLM calls
+- `skilllayer_run(task="find function X")` → structured JSON, 0 LLM calls
+- `skilllayer_run(task="run tests")` → structured JSON, 0 LLM calls
+
+There is one MCP tool for routing tasks — `skilllayer_run` — plus 29 more for
+specific operations (git log, blame, memory, dependency mapping, and so on).
+Run `python -m skilllayer.mcp_server --list-tools` for the full, current list.
 
 ## License
 
