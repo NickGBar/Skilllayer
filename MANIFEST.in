@@ -1,0 +1,19 @@
+include LICENSE
+include README.md
+include pyproject.toml
+include setup.py
+include MANIFEST.in
+recursive-include src/skilllayer/config *.py
+recursive-include src/skilllayer/llm *.py
+recursive-include src/skilllayer/macros *.py
+recursive-include src/skilllayer/memory *.py
+recursive-include src/skilllayer/router *.py
+recursive-include src/skilllayer/runner *.py
+recursive-include src/skilllayer/tools *.py
+recursive-include src/skilllayer/verifier *.py
+recursive-include src/skilllayer/workflows *.py
+prune tests
+prune runs
+prune src/deprecated
+global-exclude __pycache__
+global-exclude *.py[cod]

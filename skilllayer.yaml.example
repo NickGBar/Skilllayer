@@ -1,0 +1,14 @@
+router:
+  mode: cascade
+  local_model: phi3:mini
+  backend: ollama
+
+execution:
+  dry_run: false
+  run_tests: true
+  # Seconds RunTestsWorkflow/SingleTestWorkflow wait before giving up on the
+  # test command. Raise this if your suite legitimately takes longer.
+  test_timeout_seconds: 300
+
+logging:
+  log_dir: runs/skilllayer_logs

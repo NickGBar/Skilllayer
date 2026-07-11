@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skilllayer"
+version = "0.1.0"
+description = "Local CLI/MCP workflow layer for routine repository operations."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Nicolas Baranov", email = "nicolya.baranov@gmail.com" }]
+license = { text = "BUSL-1.1" }
+dependencies = ["psutil>=5.9"]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+browser = ["playwright>=1.40"]
+dev = ["pytest>=8.0"]
+benchmark = ["anthropic>=0.58"]
+
+[project.scripts]
+skilllayer = "skilllayer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["skilllayer*"]

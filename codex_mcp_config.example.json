@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "skilllayer": {
+      "command": "/ABSOLUTE/PATH/TO/PROJECT/.venv/bin/python",
+      "args": [
+        "-m",
+        "skilllayer.mcp_server"
+      ],
+      "cwd": "/ABSOLUTE/PATH/TO/PROJECT",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
