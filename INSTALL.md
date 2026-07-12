@@ -23,6 +23,10 @@ Recommended:
 
 ## Minimal Path
 
+This is a manual, step-by-step alternative for contributors who want an
+editable install. Most testers should use **One-Command Setup** below
+instead — it is the verified, hardened path.
+
 **Python >= 3.10 required.**
 
 ```bash
@@ -60,9 +64,10 @@ The script:
 
 - creates `.venv` if missing
 - upgrades `pip`, `setuptools`, and `wheel` inside `.venv`
-- installs SkillLayer in editable mode with the MCP extra when available
-- falls back to CLI-only install if the MCP extra fails
-- runs `python -m skilllayer tester-check`
+- installs SkillLayer (non-editable) with the required MCP runtime extra
+- fails immediately (exit 1) if that MCP-extra install fails — it does not
+  silently fall back to a reduced CLI-only install
+- runs `python -m skilllayer doctor --json` to verify the install
 - prints next steps
 
 It does not require `sudo` and does not overwrite user files without warning.
@@ -135,10 +140,11 @@ python scripts/generate_mcp_config.py
 ```
 
 This prints ready-to-copy JSON snippets for Codex, generic MCP clients, Claude
-Code, and Cursor. Codex has been validated. Cursor is partially validated from
+Code, and Cursor. Codex and Claude Code have been validated end-to-end,
+including real stdio protocol handshake, `tools/list` discovery, and cleanup
+after project-scoped `.mcp.json` removal. Cursor is partially validated from
 the SkillLayer side: config generation, local MCP server startup, and tool
 schemas are checked, but Cursor UI discovery still needs a manual client check.
-Claude Code is expected/pending.
 
 Cursor setup guide:
 
