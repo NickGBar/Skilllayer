@@ -135,6 +135,14 @@ structured JSON rather than model-generated shell steps. Later, if you choose
 to save context, SkillLayer reports the exact `.skilllayer/` paths written, and
 you can rehydrate that context in a later session.
 
+## Try the safe sandbox
+
+Use the [one-prompt sandbox trial](ONE_PROMPT_TEST.md) before trying SkillLayer
+on a committed copy of a real repository. The sandbox is disposable, records a
+sanitized `results.md`, and demonstrates explicit environment-remediation
+consent. See the [Professional Beta offer](BETA_OFFER.md) and the static
+[landing page](site/index.html) for the $49 one-time early-beta terms.
+
 ## Advanced: low-level tools
 
 The three professional skills above are built from lower-level, independently

@@ -359,7 +359,7 @@ class TestRunner:
         environment_error = False
         environment_error_code: str | None = None
         environment_error_message: str | None = None
-        if "no module named pytest" in lower:
+        if re.search(r"no module named\s+['\"]?pytest['\"]?", lower):
             environment_error = True
             environment_error_code = "pytest_not_installed_in_selected_environment"
             environment_error_message = "pytest is not installed in the selected Python environment."
@@ -448,6 +448,17 @@ class TestRunner:
         for candidate in (repo_path / ".venv" / "bin" / "pytest", repo_path / ".venv" / "Scripts" / "pytest.exe"):
             if candidate.exists():
                 return True
+        # A dedicated test requirements file is direct evidence that this is a
+        # pytest project even before pytest has been installed in its local
+        # environment. This lets the selected interpreter report the truthful
+        # missing-pytest remediation rather than falling back to unittest.
+        for name in ("requirements-test.txt", "requirements-dev.txt", "requirements.txt"):
+            candidate = repo_path / name
+            try:
+                if candidate.exists() and re.search(r"(?m)^\s*pytest(?:[<>=!~].*)?$", candidate.read_text(encoding="utf-8")):
+                    return True
+            except OSError:
+                pass
         return False
 
     def _nested_pytest_guard(self, repo_path: Path, command: list[str]) -> dict[str, Any] | None:

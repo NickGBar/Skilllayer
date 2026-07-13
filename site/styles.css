@@ -1,0 +1,20 @@
+:root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #172033; background: #f7f8fc; }
+* { box-sizing: border-box; }
+body { margin: 0; line-height: 1.55; }
+main { max-width: 1040px; margin: auto; padding: 24px; }
+section { margin: 24px 0; padding: 36px; border-radius: 20px; background: #fff; box-shadow: 0 10px 30px #1f2a4420; }
+.hero { padding: 72px 48px; background: linear-gradient(135deg, #19244a, #3654a6); color: white; }
+.eyebrow { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #bcd2ff; }
+h1 { max-width: 760px; margin: 0; font-size: clamp(2.35rem, 6vw, 4.7rem); line-height: 1.04; }
+h2 { margin-top: 0; }
+.lead { max-width: 700px; font-size: 1.25rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.button { display: inline-block; padding: 12px 18px; border-radius: 10px; font-weight: 700; text-decoration: none; }
+.primary { background: #ffce5c; color: #172033; }
+.secondary { border: 1px solid currentColor; color: inherit; }
+.fine-print { color: #dbe5ff; }
+.outcomes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; background: transparent; box-shadow: none; padding: 0; }
+.outcomes article { padding: 26px; background: #fff; border-radius: 16px; box-shadow: 0 10px 30px #1f2a4420; }
+.safety li { margin: 8px 0; }
+.beta { border: 2px solid #3654a6; }
+@media (max-width: 720px) { .hero { padding: 40px 26px; } .outcomes { grid-template-columns: 1fr; } section { padding: 28px; } }

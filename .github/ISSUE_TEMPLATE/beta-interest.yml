@@ -1,0 +1,35 @@
+name: Beta interest
+description: Request SkillLayer Professional Beta instructions after trying the sandbox.
+title: "[Beta] "
+labels: [beta-interest]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include source code, API keys, credentials, .env contents, private repository URLs, payment details, or unrelated MCP configuration."
+  - type: input
+    id: coding-agent
+    attributes: { label: Coding agent used, placeholder: "Claude Code, Codex, Cursor, or other" }
+    validations: { required: true }
+  - type: input
+    id: macos
+    attributes: { label: macOS version, placeholder: "Example: macOS 15" }
+    validations: { required: true }
+  - type: dropdown
+    id: python-experience
+    attributes:
+      label: Python experience
+      options: [New to Python environments, Comfortable with virtual environments, Advanced]
+    validations: { required: true }
+  - type: textarea
+    id: intended-use
+    attributes: { label: Intended use, description: "Describe the kind of work without source code or private details." }
+    validations: { required: true }
+  - type: checkboxes
+    id: sandbox
+    attributes:
+      label: Sandbox
+      options:
+        - label: I am willing to test the disposable sandbox first.
+          required: true
+        - label: I consent to receive beta instructions through GitHub.
+          required: true

@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a sanitized SkillLayer issue.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Never paste API keys, source code, .env files, credentials, unrelated MCP configs, project memory contents, or private paths. Use sanitized output only."
+  - type: input
+    id: version
+    attributes: { label: SkillLayer version or commit }
+    validations: { required: true }
+  - type: input
+    id: os
+    attributes: { label: OS and version }
+    validations: { required: true }
+  - type: input
+    id: error-code
+    attributes: { label: Error code, description: "If one was shown." }
+  - type: dropdown
+    id: repository-kind
+    attributes:
+      label: Where did this happen?
+      options: [Disposable sandbox, Committed copy of a real repository]
+    validations: { required: true }
+  - type: textarea
+    id: sanitized-output
+    attributes: { label: Sanitized output, description: "Remove private paths and all sensitive content." }
+  - type: dropdown
+    id: unexpected-writes
+    attributes:
+      label: Were unexpected writes observed?
+      options: [No, Yes, Unsure]
+    validations: { required: true }
