@@ -203,12 +203,17 @@ class ProjectTools:
         self._last_test_version = self._repo_version
         return self.last_test_result
 
-    def run_single_test(self, command: list[str]) -> dict[str, Any]:
+    def run_single_test(
+        self, command: list[str], execution_environment: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         self._record("run_single_test", command=command)
         # A single, explicitly-resolved test target carries none of the
         # "rediscovers and re-executes the whole suite, including itself"
         # recursion risk — opt out of the nested-pytest guard.
-        result = self.test_runner.run_command(self.repo_path, command, allow_nested=True)
+        result = self.test_runner.run_command(
+            self.repo_path, command, allow_nested=True,
+            execution_environment=execution_environment,
+        )
         self.last_test_result = result
         self._dirty_since_tests = False
         self._last_test_version = self._repo_version

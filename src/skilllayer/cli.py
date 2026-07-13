@@ -53,6 +53,11 @@ from .tester_check import run_tester_check
 from .tools import inspect_repo
 from .token_savings_benchmark import run_token_savings_benchmark
 from .workflow_repair import run_workflow_repair_report
+from .runner.core import (
+    build_release_readiness_artifacts,
+    build_resume_work_artifacts,
+    build_safe_change_artifacts,
+)
 
 
 COMMANDS = {
@@ -63,6 +68,7 @@ COMMANDS = {
     "doctor",
     "mcp-config",
     "mcp-config-check",
+    "safe-change", "release-readiness", "resume-work",
     "stats", "analytics", "benchmark", "analyze-failures", "repair-workflows-report",
     "optimize-cost-report", "generalization-report", "packaging-audit", "open-source-audit",
     "usage-report", "cost-report", "ab-benchmark", "validate-live-telemetry", "demand-report",
@@ -153,6 +159,25 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--log-dir", type=Path, default=None, help="Optional log directory to check.")
     doctor_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     doctor_parser.set_defaults(handler=handle_doctor)
+
+    safe_change_parser = subparsers.add_parser("safe-change", help="Plan and validate a code change safely (host agent performs the edit).")
+    safe_change_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
+    safe_change_parser.add_argument("--task", required=True, help="Description of the change to make.")
+    safe_change_parser.add_argument("--phase", choices=["plan", "validate"], default="plan", help="plan (default) or validate.")
+    safe_change_parser.add_argument("--save-context", action="store_true", help="On phase=validate, persist a summary snapshot under .skilllayer/.")
+    safe_change_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    safe_change_parser.set_defaults(handler=handle_safe_change)
+
+    release_readiness_parser = subparsers.add_parser("release-readiness", help="Assess whether a repository is ready for careful external release.")
+    release_readiness_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
+    release_readiness_parser.add_argument("--deep", action="store_true", help="Also execute the repository's own test suite (bounded by default).")
+    release_readiness_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    release_readiness_parser.set_defaults(handler=handle_release_readiness)
+
+    resume_work_parser = subparsers.add_parser("resume-work", help="Reconstruct project state for a new session from saved memory alone.")
+    resume_work_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
+    resume_work_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    resume_work_parser.set_defaults(handler=handle_resume_work)
 
     mcp_config_parser = subparsers.add_parser("mcp-config", help="Generate the installed SkillLayer stdio MCP config.")
     mcp_config_parser.add_argument("--output", type=Path, default=None, help="Explicit path to write config JSON; otherwise print it.")
@@ -391,6 +416,99 @@ def handle_inspect(args: argparse.Namespace) -> int:
         macro_sequence=[],
     )
     return 0
+
+
+def _resolve_repo_arg(repo_arg: str | None) -> Path:
+    return Path(repo_arg or os.getcwd()).expanduser().resolve()
+
+
+def _print_environment_remediation(remediation: dict[str, object] | None) -> None:
+    if not remediation or remediation.get("remediation_type") in (None, "none"):
+        return
+    print(f"  environment: {remediation.get('remediation_summary')}")
+    command = remediation.get("remediation_command")
+    if command:
+        print(f"  recommended_command: {command}")
+    if remediation.get("mutates_environment"):
+        print("  note: this command changes the target environment. SkillLayer did not run it; review it, run it yourself, then retry validation.")
+    else:
+        print("  note: SkillLayer did not run a remediation command. Review the environment, then retry validation.")
+
+
+def handle_safe_change(args: argparse.Namespace) -> int:
+    started = time.perf_counter()
+    repo = _resolve_repo_arg(args.repo)
+    result = build_safe_change_artifacts(
+        repo, args.task, phase=args.phase, save_context=bool(args.save_context),
+    )
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Safe code change — phase={result['phase']} verdict={result['verdict']}")
+        print(f"  repository_state: {result['repository_state']}")
+        if result["phase"] == "plan":
+            print("  proposed_plan:")
+            for step in result.get("proposed_plan") or []:
+                print(f"    - {step}")
+        else:
+            print(f"  changed_files: {result['changed_files']}")
+            print(f"  tests_run: {result['tests_run']}  tests_passed: {result['tests_passed']}")
+            _print_environment_remediation(result.get("remediation"))
+        if result.get("risks"):
+            print(f"  risks: {result['risks']}")
+        if result.get("warnings"):
+            print(f"  warnings: {result['warnings']}")
+        print(f"  next_action: {result['next_action']}")
+    record_tool_invocation_best_effort(
+        tool_name="skilllayer_safe_change", repo_path=str(repo), task=args.task,
+        workflow="SafeCodeChangeWorkflow", success=bool(result.get("success")),
+        duration_ms=(time.perf_counter() - started) * 1000.0, tool_calls=0, macro_sequence=[],
+    )
+    return 0 if result.get("success") else 1
+
+
+def handle_release_readiness(args: argparse.Namespace) -> int:
+    started = time.perf_counter()
+    repo = _resolve_repo_arg(args.repo)
+    result = build_release_readiness_artifacts(repo, deep=bool(args.deep))
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Release readiness — verdict={result['verdict']}")
+        print(f"  checks_completed: {', '.join(result['checks_completed'])}")
+        if result["checks_incomplete"]:
+            print(f"  checks_incomplete: {[c['check'] for c in result['checks_incomplete']]}")
+        if result["blockers"]:
+            print(f"  blockers: {result['blockers']}")
+        if result["warnings"]:
+            print(f"  warnings: {result['warnings']}")
+        _print_environment_remediation(result.get("remediation") or result.get("test_status", {}).get("remediation"))
+    record_tool_invocation_best_effort(
+        tool_name="skilllayer_release_readiness", repo_path=str(repo), task=None,
+        workflow="ReleaseReadinessWorkflow", success=bool(result.get("success")),
+        duration_ms=(time.perf_counter() - started) * 1000.0, tool_calls=0, macro_sequence=[],
+    )
+    return 0 if result.get("verdict") in ("READY_FOR_CAREFUL_TESTERS", "READY_WITH_KNOWN_LIMITATIONS") else 1
+
+
+def handle_resume_work(args: argparse.Namespace) -> int:
+    started = time.perf_counter()
+    repo = _resolve_repo_arg(args.repo)
+    result = build_resume_work_artifacts(repo)
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Resume project work — verdict={result['verdict']}")
+        print(f"  project_summary: {result['project_summary']}")
+        print(f"  remembered_next_action: {result['remembered_next_action']}")
+        if result["uncertainty"]:
+            print(f"  uncertainty: {result['uncertainty']}")
+    record_tool_invocation_best_effort(
+        tool_name="skilllayer_resume_work", repo_path=str(repo), task=None,
+        workflow="ResumeProjectWorkWorkflow", success=bool(result.get("success")),
+        duration_ms=(time.perf_counter() - started) * 1000.0, tool_calls=0, macro_sequence=[],
+    )
+    return 0 if result.get("success") else 1
 
 
 def handle_workflows(args: argparse.Namespace) -> int:
@@ -767,7 +885,7 @@ def handle_open_source_audit(args: argparse.Namespace) -> int:
         print("  top_5_risks:")
         for item in result["top_5_risks"]:
             print(f"    {item['risk']} [{item['severity']}]: {item['evidence']}")
-        print("  report: runs/open_source_audit/report.json")
+        print("  report: runs/p5_2_open_source_audit/report.json")
     return 0
 
 
@@ -1196,7 +1314,7 @@ def handle_token_benchmark(args: argparse.Namespace) -> int:
         print("")
         print("Interpretation: estimated proxy metrics only; this does not prove real token savings.")
         print("External Claude Code/Cursor validation is still required.")
-        print("Report: runs/token_savings_benchmark/report.json")
+        print("Report: runs/p12_0_token_savings_benchmark/report.json")
     return 0 if result["success"] else 1
 
 
@@ -1226,7 +1344,7 @@ def handle_benchmark_automation(args: argparse.Namespace) -> int:
         print("")
         print("Interpretation: estimated proxy metrics only; this does not prove real token savings.")
         print("No repositories are cloned and no network access is required.")
-        print("Report: runs/benchmark_automation/report.json")
+        print("Report: runs/p12_1_benchmark_automation/report.json")
     return 0 if result["success"] else 1
 
 

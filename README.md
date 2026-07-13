@@ -1,18 +1,28 @@
 # SkillLayer
 
-SkillLayer is a local CLI and stdio MCP server for deterministic repository
-workflows. It makes no LLM calls itself. It returns structured JSON, but a
-deterministic workflow is not automatically safe or portable to every project.
-It makes no industry-analyst token-cost prediction and does not claim to prove
-token savings.
+SkillLayer gives AI coding agents professional engineering skills: safe code
+changes, release readiness checks, and persistent project context.
 
-Current code registers 44 workflows: 38 `stable` and 6 `internal`. The
-authoritative inventory is `skilllayer workflows --json`; it includes each
-workflow’s stability and write behavior. MCP currently exposes 36 tools; the
-runtime tool list is authoritative and can change with the installed version.
+- **Make code changes safely.** Inspect the repository and git status, get a
+  bounded change plan, then — after the AI agent makes the edit — validate
+  the resulting diff and tests before you trust it.
+- **Check whether a project is ready to release.** One honest, bounded
+  verdict from git status, a secret scan, dependency and packaging checks,
+  and memory integrity — blockers and incomplete checks are always disclosed,
+  never hidden behind a false "clean."
+- **Continue work across AI-agent sessions.** Save context once; a brand-new
+  session — no prior conversation, no shared memory — recovers what was
+  completed, what constraints matter, and what to do next.
+
+SkillLayer runs locally and makes no LLM calls of its own. It has no cloud
+service and no uploaded telemetry. It returns
+deterministic, structured JSON, but a deterministic result is not
+automatically safe or portable to every project. SkillLayer does not claim to prove token savings.
 
 Python 3.10+ is required. The release path is verified on macOS in this
 repository; Windows installer logic is checked statically, not executed here.
+MCP integration is verified end-to-end with Claude Code and Codex; Cursor is
+partially validated. Not every AI client is supported.
 
 ## Install
 
@@ -55,6 +65,25 @@ Start with `skilllayer_inspect_repo`, `skilllayer_search`, or `skilllayer_run`
 for a read-only task such as “Git status”. Internal workflows and the unsafe
 profile/memory execution workflows are not registered over MCP.
 
+## Try it
+
+Once connected, ask your AI coding agent things like:
+
+> Help me implement this issue safely. Inspect the repository, propose a
+> plan, and validate the final diff.
+
+> Check whether this repository is ready for careful external testing. Do
+> not modify files.
+
+> Restore the project context and tell me what was completed, what
+> constraints matter, and what I should do next.
+
+These map to `skilllayer_safe_change`, `skilllayer_release_readiness`, and
+`skilllayer_resume_work` — each returns a bounded verdict (e.g.
+`CHANGE_VALIDATED`, `NOT_READY`, `READY_WITH_REPOSITORY_DRIFT`) rather than a
+free-form summary, and never claims success when a check was incomplete or
+skipped.
+
 ## Writes, memory, and network
 
 Read-only workflows do not intentionally write repository files. Stateful
@@ -68,6 +97,18 @@ work, or run a target script. Their metadata marks these as
 `external_side_effects_possible`; use committed copies or a clean branch first.
 BrowserSmoke requires its configured browser backend and writes artifacts only
 when explicitly enabled.
+
+For Python tests, SkillLayer uses a usable target-repository `.venv`, `venv`,
+or `env` interpreter before falling back to its own interpreter. Structured
+test results report the selected interpreter and fallback decision. SkillLayer
+never installs dependencies or creates environments; a missing test dependency
+is reported as incomplete validation rather than a claim that the code failed.
+
+### Environment-aware validation
+
+When a target environment cannot collect tests, SkillLayer reports an
+evidence-based command you can review and run yourself. It never executes that
+command automatically; validation remains incomplete until tests actually run.
 
 Automatic telemetry is off by default and no telemetry is uploaded. Session
 usage reads local Claude Code logs and can measure recorded usage; it cannot
@@ -93,3 +134,14 @@ MCP. You ask it to inspect a repository or search for `greet`; the result is
 structured JSON rather than model-generated shell steps. Later, if you choose
 to save context, SkillLayer reports the exact `.skilllayer/` paths written, and
 you can rehydrate that context in a later session.
+
+## Advanced: low-level tools
+
+The three professional skills above are built from lower-level, independently
+callable building blocks: repository inspection, git history and blame,
+dependency mapping, secret scanning, dead-code detection, todo/decision
+tracking, and more. Current code registers 47 workflows: 41 `stable` and 6
+`internal`. The authoritative inventory is `skilllayer workflows --json`; it
+includes each workflow’s stability and write behavior. MCP currently exposes
+39 tools; the runtime tool list is authoritative and can change with the
+installed version.

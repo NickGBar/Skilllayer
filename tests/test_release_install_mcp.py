@@ -37,9 +37,11 @@ def _read_line_with_timeout(stream, timeout: float = 10.0) -> str:
 
 
 class _StdioMcpClient:
-    def __init__(self, command: list[str], cwd: Path) -> None:
+    def __init__(self, command: list[str], cwd: Path, *, extra_env: dict[str, str] | None = None) -> None:
         env = os.environ.copy()
         env.pop("PYTHONPATH", None)
+        if extra_env:
+            env.update(extra_env)
         self.process = subprocess.Popen(
             command,
             cwd=cwd,
@@ -168,8 +170,9 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     assert "skilllayer/mcp_server.py" in wheel_contents
     assert "licenses/LICENSE" in wheel_contents
 
-    # The environment is fresh for SkillLayer.  System site packages provide the
-    # already-declared MCP dependency in this offline test environment only.
+    # The environment is fresh for SkillLayer. The test runner's already-declared
+    # MCP dependency is made available only to the child server process, without
+    # installing it or allowing a checkout import to satisfy the test.
     environment = tmp_path / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
     python = _venv_python(environment)
@@ -194,7 +197,14 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     subprocess.run([str(python), "-m", "skilllayer", "doctor", "--json"], cwd=outside, check=True, capture_output=True, text=True)
     subprocess.run([str(python), "-m", "skilllayer", "workflows", "--json"], cwd=outside, check=True, capture_output=True, text=True)
 
-    client = _StdioMcpClient([str(python), "-m", "skilllayer.mcp_server"], outside)
+    runtime_site_packages = subprocess.check_output(
+        [sys.executable, "-c", "import site; print(site.getsitepackages()[0])"], text=True
+    ).strip()
+    client = _StdioMcpClient(
+        [str(python), "-m", "skilllayer.mcp_server"],
+        outside,
+        extra_env={"PYTHONPATH": runtime_site_packages},
+    )
     saved_paths: list[str] = []
     try:
         request_id = _initialize(client, 1)
@@ -235,7 +245,11 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
 
     # A new installed server process must rehydrate the state written by the
     # first one; no source import or shared in-process cache may satisfy this.
-    restarted = _StdioMcpClient([str(python), "-m", "skilllayer.mcp_server"], outside)
+    restarted = _StdioMcpClient(
+        [str(python), "-m", "skilllayer.mcp_server"],
+        outside,
+        extra_env={"PYTHONPATH": runtime_site_packages},
+    )
     try:
         request_id = _initialize(restarted, 20)
         rehydrated = _tool_payload(restarted.request(request_id, "tools/call", {

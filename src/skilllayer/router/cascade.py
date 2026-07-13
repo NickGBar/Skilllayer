@@ -31,7 +31,7 @@ class RouteDecision:
 
 
 class SkillRouter:
-    """Small extracted router cascade from the A2/A3 experiments.
+    """Small extracted deterministic router cascade.
 
     This preserves the existing workflow set. It intentionally does not add new
     task types or use a real model by default. Its sole concern is intent: which
@@ -64,6 +64,17 @@ class SkillRouter:
 
     def _match_task_type(self, text: str) -> tuple[str, float] | None:
         """Return the matched (task_type, confidence), or None when nothing matches."""
+        # Professional skill packs are checked first: they are the intended
+        # product surface for these phrasings and orchestrate several existing
+        # workflows, so they must win over the narrower single-workflow
+        # predicates below (e.g. "restore the project context" should reach
+        # the fuller ResumeProjectWorkWorkflow, not the bare rehydrate digest).
+        if self._looks_like_safe_change_request(text):
+            return "safe_code_change", 0.90
+        if self._looks_like_release_readiness_request(text):
+            return "release_readiness", 0.90
+        if self._looks_like_resume_work_request(text):
+            return "resume_project_work", 0.90
         if self._looks_like_save_context_request(text):
             return "save_context", 0.92
         if self._looks_like_track_decision_request(text):
@@ -160,6 +171,42 @@ class SkillRouter:
         if re.search(r"\b(find|locate|where is|definition)\b", text):
             return "find_function", 0.90
         return None
+
+    def _looks_like_safe_change_request(self, text: str) -> bool:
+        return bool(
+            re.search(r"\bimplement\s+this\s+(?:issue\s+)?safely\b", text)
+            or re.search(r"\bsafe(?:ly)?\s+(?:code\s+)?change\b", text)
+            or re.search(r"\bplan\s+a\s+safe\s+(?:code\s+)?(?:change|modification)\b", text)
+            or re.search(r"\bhelp\s+me\s+(?:change|implement)\s+this\s+feature\s+safely\b", text)
+            or re.search(r"\bwithout\s+breaking\s+(?:unrelated\s+)?(?:behavior|things|anything)\b", text)
+            or re.search(r"\bverify\s+this\s+change\b", text)
+            or re.search(r"\bmake\s+(?:this\s+)?(?:code\s+)?change\s+and\s+verify\b", text)
+        )
+
+    def _looks_like_release_readiness_request(self, text: str) -> bool:
+        return bool(
+            re.search(r"\bready\s+to\s+(?:ship|release|publish)\b", text)
+            or re.search(r"\bcheck\s+(?:this\s+)?(?:repo|repository|project)?\s*before\s+release\b", text)
+            or re.search(r"\bcan\s+i\s+publish\s+this\b", text)
+            or re.search(r"\bready\s+for\s+(?:careful\s+)?(?:external\s+)?testers\b", text)
+            or re.search(r"\bprepare\s+(?:this\s+)?(?:repo|repository|project)?\s*for\s+(?:careful\s+)?external\s+testers\b", text)
+            or re.search(r"\brelease\s+readiness\b", text)
+            or re.search(r"\bpre-?release\s+check\b", text)
+            or re.search(r"\bsafe\s+to\s+publish\b", text)
+        )
+
+    def _looks_like_resume_work_request(self, text: str) -> bool:
+        if re.search(r"\b(commit|stage|push|merge|rebase)\b", text):
+            return False
+        return bool(
+            re.search(r"\bcontinue\s+where\s+(?:i|we)\s+(?:left\s+off|stopped)\b", text)
+            or re.search(r"\bwhat\s+was\s+i\s+(?:working\s+on|doing)\b", text)
+            or re.search(r"\bwhat\s+should\s+i\s+(?:do|work\s+on)\s+next\b", text)
+            or re.search(r"\brestore\s+(?:the\s+)?project\s+context\b", text)
+            or re.search(r"\brecover\s+(?:the\s+)?project\s+state\b", text)
+            or re.search(r"\bresume\s+(?:project\s+)?work\b", text)
+            or re.search(r"\b(?:start\s+a\s+new\s+session|new\s+session)\b.*\brecover\b", text)
+        )
 
     def _looks_like_add_helper_request(self, text: str) -> bool:
         if re.search(r"\b(improve|make\s+project\s+better|fix\s+issue|clean\s+up|refactor)\b", text):

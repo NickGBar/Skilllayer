@@ -215,6 +215,15 @@ class SkillLayer:
             workflow_artifacts, git_tool_calls = build_git_status_artifacts(repo, log)
             tools.tool_call_count += git_tool_calls
             success = bool(workflow_artifacts.get("is_git_repo"))
+        elif route.task_type == "safe_code_change":
+            workflow_artifacts = build_safe_change_artifacts(repo, task_description, phase="plan")
+            success = bool(workflow_artifacts.get("success"))
+        elif route.task_type == "release_readiness":
+            workflow_artifacts = build_release_readiness_artifacts(repo)
+            success = bool(workflow_artifacts.get("success"))
+        elif route.task_type == "resume_project_work":
+            workflow_artifacts = build_resume_work_artifacts(repo)
+            success = bool(workflow_artifacts.get("success"))
         elif route.task_type == "inspect_repo_structure":
             workflow_artifacts = build_inspect_repo_structure_artifacts(repo)
             success = True
@@ -794,7 +803,9 @@ class SkillLayer:
             )
             return artifacts, {"available": False, "returncode": None, "stdout": "", "stderr": str(resolution.get("summary", ""))}
         command = list(resolution.get("command", []) or [])
-        test_result = tools.run_single_test(command)
+        test_result = tools.run_single_test(
+            command, execution_environment=resolution.get("execution_environment")
+        )
         artifacts = build_single_test_artifacts(test_result, resolution)
         return artifacts, test_result
 
@@ -1108,7 +1119,12 @@ def clean_dependency_candidate(candidate: str) -> str | None:
 
 
 def tests_were_run(test_result: dict[str, Any]) -> bool:
-    return bool(test_result.get("available")) and not bool(test_result.get("skipped")) and test_result.get("returncode") is not None
+    return (
+        bool(test_result.get("available"))
+        and not bool(test_result.get("skipped"))
+        and test_result.get("returncode") is not None
+        and not bool(test_result.get("environment_error"))
+    )
 
 
 def test_result_passed(test_result: dict[str, Any]) -> bool | None:
@@ -1163,6 +1179,8 @@ def classify_run_tests_outcome(
     failed_tests: list[dict[str, Any]],
     failure_count: int,
 ) -> str:
+    if bool(test_result.get("environment_error")):
+        return "ENVIRONMENT_MISMATCH"
     if bool(test_result.get("nested_execution_blocked")):
         return "BLOCKED_NESTED_EXECUTION"
     if bool(test_result.get("timed_out")):
@@ -1183,6 +1201,8 @@ def classify_run_tests_outcome(
 
 
 def error_code_for_run_tests_outcome(outcome: str, tests_run: bool) -> str | None:
+    if outcome == "ENVIRONMENT_MISMATCH":
+        return "execution_environment_mismatch"
     if outcome == "BLOCKED_NESTED_EXECUTION":
         return "nested_test_execution_blocked"
     if outcome == "TIMEOUT":
@@ -1208,6 +1228,7 @@ def outcome_reason_for_run_tests_outcome(
     reasons = {
         "PASSED": "Tests ran and passed.",
         "FAILED_TESTS": "Tests ran and produced test failures.",
+        "ENVIRONMENT_MISMATCH": "Test execution did not reach test execution because the selected environment could not satisfy it.",
         "NO_TESTS_DISCOVERED": "A test command ran, but it discovered zero tests.",
         "NO_TEST_COMMAND": "No supported test command was detected.",
         "COMMAND_ERROR": "The test command failed without a parseable test failure outcome.",
@@ -1241,6 +1262,7 @@ def recommendation_for_run_tests_outcome(outcome: str) -> str:
     recommendations = {
         "PASSED": "No test action needed.",
         "FAILED_TESTS": "Inspect failed_tests, stdout_snippet, and stderr_snippet; use ExplainFailureWorkflow for deterministic diagnosis.",
+        "ENVIRONMENT_MISMATCH": "Review selected_python and environment_error_message. SkillLayer does not install dependencies automatically.",
         "NO_TESTS_DISCOVERED": "No tests were collected. Inspect repository test layout or run SingleTestWorkflow with an explicit target.",
         "NO_TEST_COMMAND": "Repository does not expose a supported test command. Inspect project metadata or provide an explicit test target.",
         "COMMAND_ERROR": "Review stderr_snippet and stdout_snippet; verify the test runner and environment before interpreting failures.",
@@ -1578,6 +1600,7 @@ def add_helper_result(
             "tests_run": False,
             "tests_passed": None,
             "validation_status": "not_applicable",
+            "remediation": None,
         },
         "verification_ran": bool(verification_ran),
         "verification_passed": verification_passed,
@@ -1619,6 +1642,16 @@ def build_run_tests_plan_artifacts(command: list[str] | None) -> dict[str, Any]:
         "workflow_execution_success": bool(command),
         "task_validation_success": None,
         "recommendation": recommendation_for_run_tests_outcome(outcome),
+        "execution_environment": None,
+        "selected_python": command[0] if command and len(command) > 0 else None,
+        "selection_source": "not_executed",
+        "fallback_used": False,
+        "collection_started": False,
+        "tests_started": False,
+        "environment_error": False,
+        "environment_error_code": None,
+        "environment_error_message": None,
+        "remediation": None,
     }
 
 
@@ -1658,6 +1691,16 @@ def build_single_test_plan_artifacts(repo: Path, task_description: str, last_fai
         "workflow_execution_success": supported,
         "task_validation_success": None,
         "recommendation": recommendation_for_run_tests_outcome(outcome),
+        "execution_environment": resolution.get("execution_environment"),
+        "selected_python": (resolution.get("execution_environment") or {}).get("selected_python"),
+        "selection_source": "not_executed",
+        "fallback_used": bool((resolution.get("execution_environment") or {}).get("fallback_used", False)),
+        "collection_started": False,
+        "tests_started": False,
+        "environment_error": False,
+        "environment_error_code": None,
+        "environment_error_message": None,
+        "remediation": None,
     }
 
 
@@ -1711,6 +1754,16 @@ def build_single_test_error_artifacts(resolution: dict[str, Any]) -> dict[str, A
         "workflow_execution_success": False,
         "task_validation_success": False,
         "recommendation": recommendation_for_run_tests_outcome(outcome),
+        "execution_environment": None,
+        "selected_python": None,
+        "selection_source": "not_executed",
+        "fallback_used": False,
+        "collection_started": False,
+        "tests_started": False,
+        "environment_error": False,
+        "environment_error_code": None,
+        "environment_error_message": None,
+        "remediation": None,
     }
 
 
@@ -1779,6 +1832,16 @@ def build_run_tests_artifacts(test_result: dict[str, Any]) -> dict[str, Any]:
         "workflow_execution_success": workflow_execution_success_for_run_tests_outcome(outcome),
         "task_validation_success": True if outcome == "PASSED" else False,
         "recommendation": recommendation_for_run_tests_outcome(outcome),
+        "execution_environment": test_result.get("execution_environment"),
+        "selected_python": test_result.get("selected_python"),
+        "selection_source": test_result.get("selection_source"),
+        "fallback_used": bool(test_result.get("fallback_used", False)),
+        "collection_started": bool(test_result.get("collection_started", False)),
+        "tests_started": bool(test_result.get("tests_started", tests_run)),
+        "environment_error": test_result.get("environment_error", False),
+        "environment_error_code": test_result.get("environment_error_code"),
+        "environment_error_message": test_result.get("environment_error_message"),
+        "remediation": test_result.get("remediation"),
     }
 
 
@@ -1802,6 +1865,9 @@ def build_explain_failure_artifacts(test_result: dict[str, Any]) -> dict[str, An
     elif outcome == "TIMEOUT":
         summary = "Test run timed out before producing failure output. No failures to explain."
         error_code = "test_run_timed_out"
+    elif outcome == "ENVIRONMENT_MISMATCH":
+        summary = "Test execution did not reach tests because the selected environment was incomplete."
+        error_code = run_artifacts.get("environment_error_code") or "execution_environment_mismatch"
     elif outcome == "NO_TESTS_DISCOVERED":
         summary = "No tests were discovered. Nothing to explain."
         error_code = "no_tests_discovered"
@@ -2839,9 +2905,11 @@ def command_for_single_test_target(repo: Path, target: str) -> dict[str, Any]:
     if normalized.endswith(".py") or ".py::" in normalized:
         return command_for_pytest_like_target(repo, normalized)
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}", normalized):
+        selection = TestRunner().select_python_interpreter(repo).as_dict()
         return {
             "supported": True,
-            "command": [sys.executable, "-m", "unittest", normalized],
+            "command": [selection["selected_python"] or sys.executable, "-m", "unittest", normalized],
+            "execution_environment": selection,
             "test_target": normalized,
             "summary": "Resolved dotted unittest target.",
         }
@@ -2876,10 +2944,13 @@ def command_for_pytest_like_target(repo: Path, target: str) -> dict[str, Any]:
     if "::" in target:
         suffix = "::" + target.split("::", 1)[1]
     resolved_target = f"{resolved_file}{suffix}"
+    selection = TestRunner().select_python_interpreter(repo).as_dict()
+    selected_python = selection["selected_python"] or sys.executable
     if importlib.util.find_spec("pytest") is not None:
         return {
             "supported": True,
-            "command": [sys.executable, "-m", "pytest", "-q", resolved_target],
+            "command": [selected_python, "-m", "pytest", "-q", resolved_target],
+            "execution_environment": selection,
             "test_target": resolved_target,
             "summary": "Resolved pytest single-test target.",
         }
@@ -2893,7 +2964,8 @@ def command_for_pytest_like_target(repo: Path, target: str) -> dict[str, Any]:
     module_target = resolved_target[:-3].replace("/", ".")
     return {
         "supported": True,
-        "command": [sys.executable, "-m", "unittest", module_target],
+        "command": [selected_python, "-m", "unittest", module_target],
+        "execution_environment": selection,
         "test_target": module_target,
         "summary": "Resolved file target through unittest module discovery.",
     }
@@ -2913,9 +2985,11 @@ def command_for_test_function_name(repo: Path, test_name: str) -> dict[str, Any]
             matches.append(safe_relative_path(path, repo))
     if len(matches) == 1 and importlib.util.find_spec("pytest") is not None:
         target = f"{matches[0]}::{test_name}"
+        selection = TestRunner().select_python_interpreter(repo).as_dict()
         return {
             "supported": True,
-            "command": [sys.executable, "-m", "pytest", "-q", target],
+            "command": [selection["selected_python"] or sys.executable, "-m", "pytest", "-q", target],
+            "execution_environment": selection,
             "test_target": target,
             "summary": "Resolved unique pytest function target.",
         }
@@ -3805,9 +3879,9 @@ def build_monitor_flakiness_artifacts(
         # identifier on top would run the entire directory AND the target,
         # not just the target.
         if "pytest" in " ".join(base_cmd):
-            cmd = [sys.executable, "-m", "pytest", "-q", test_identifier]
+            cmd = [base_cmd[0], "-m", "pytest", "-q", test_identifier]
         elif "unittest" in " ".join(base_cmd):
-            cmd = [sys.executable, "-m", "unittest", test_identifier]
+            cmd = [base_cmd[0], "-m", "unittest", test_identifier]
         else:
             cmd = list(base_cmd) + [test_identifier]
     else:
@@ -3817,6 +3891,7 @@ def build_monitor_flakiness_artifacts(
     failed = 0
     failure_messages: list[str] = []
     duration_ms_list: list[int] = []
+    last_run_result: dict[str, Any] | None = None
 
     for _ in range(runs):
         # A specific, explicitly-named target carries none of the "rediscovers
@@ -3824,6 +3899,7 @@ def build_monitor_flakiness_artifacts(
         # bare/directory-wide invocation does — only the latter needs the
         # nested-pytest guard.
         run_result = test_runner.run_command(repo, cmd, allow_nested=has_specific_target)
+        last_run_result = run_result
         duration_ms_list.append(int(run_result.get("duration_ms", 0)))
         if run_result.get("returncode") == 0:
             passed += 1
@@ -3836,6 +3912,7 @@ def build_monitor_flakiness_artifacts(
     pass_rate = passed / runs
     flaky = 0.0 < pass_rate < 1.0
     deterministic = not flaky
+    test_execution_started = bool(last_run_result) and not bool((last_run_result or {}).get("environment_error"))
 
     return {
         "workflow": "MonitorTestFlakinessWorkflow",
@@ -3850,9 +3927,16 @@ def build_monitor_flakiness_artifacts(
         "duration_ms": duration_ms_list,
         "median_duration_ms": _flakiness_median(duration_ms_list),
         "checked_at": checked_at,
-        "tests_run": True,
-        "tests_passed": passed == runs,
+        "tests_run": test_execution_started,
+        "tests_passed": (passed == runs) if test_execution_started else None,
         "validation_status": "not_applicable",
+        "execution_environment": (last_run_result or {}).get("execution_environment"),
+        "selected_python": (last_run_result or {}).get("selected_python"),
+        "selection_source": (last_run_result or {}).get("selection_source"),
+        "fallback_used": bool((last_run_result or {}).get("fallback_used", False)),
+        "environment_error": (last_run_result or {}).get("environment_error", False),
+        "environment_error_code": (last_run_result or {}).get("environment_error_code"),
+        "remediation": (last_run_result or {}).get("remediation"),
     }
 
 
@@ -3921,6 +4005,7 @@ def build_measure_test_speed_artifacts(repo: Path, *, persist_baseline: bool = F
             "state_write_performed": False,
             "written_paths": [],
             "gitignore_suggestions": [".skilllayer/test_speed_baseline.json"],
+            "remediation": None,
         }
 
     cmd = list(base_cmd)
@@ -3992,14 +4077,23 @@ def build_measure_test_speed_artifacts(repo: Path, *, persist_baseline: bool = F
         "baseline_delta_ms": baseline_delta_ms,
         "baseline_saved_at": baseline_saved_at,
         "checked_at": checked_at,
-        "tests_run": True,
-        "tests_passed": failed == 0,
+        "tests_run": not bool(run_result.get("environment_error")),
+        "tests_passed": (failed == 0) if not bool(run_result.get("environment_error")) else None,
         "validation_status": "not_applicable",
         "persist_baseline": persist_baseline,
         "state_write_performed": bool(written_paths),
         "written_paths": written_paths,
         "state_write_error": state_write_error,
         "gitignore_suggestions": [".skilllayer/test_speed_baseline.json"],
+        "execution_environment": run_result.get("execution_environment"),
+        "selected_python": run_result.get("selected_python"),
+        "selection_source": run_result.get("selection_source"),
+        "fallback_used": bool(run_result.get("fallback_used", False)),
+        "collection_started": bool(run_result.get("collection_started", False)),
+        "tests_started": bool(run_result.get("tests_started", False)),
+        "environment_error": run_result.get("environment_error", False),
+        "environment_error_code": run_result.get("environment_error_code"),
+        "remediation": run_result.get("remediation"),
         **({"error_code": "baseline_write_failed", "error": state_write_error} if state_write_error else {}),
     }
 
@@ -7567,7 +7661,569 @@ def build_find_conflicts_artifacts(repo: Path) -> dict[str, Any]:
     }
 
 
+# ============================================================================
+# Professional skill packs — SafeCodeChangeWorkflow, ReleaseReadinessWorkflow,
+# ResumeProjectWorkWorkflow. Each composes existing read-only/bounded builders
+# above into one bounded, honest verdict. None duplicate the underlying
+# inspection/search/secret-scan/test-execution/memory logic; they only
+# aggregate and classify it. See docs/SKILLS.md for the user-facing contract.
+# ============================================================================
+
+_SAFE_CHANGE_PLAN_STOPWORDS = frozenset({
+    "the", "and", "for", "with", "this", "that", "implement", "help", "change",
+    "feature", "safely", "without", "breaking", "unrelated", "behavior", "make",
+    "code", "plan", "prepare", "verify", "issue", "please", "into", "from",
+})
+
+
+def _extract_change_search_terms(task: str) -> list[str]:
+    """Deterministic keyword extraction for the safe-change relevance search.
+
+    Prefers quoted/backticked substrings (the caller naming a specific symbol
+    or file); falls back to significant words from the free-text task
+    description. Zero LLM calls — this is a heuristic, not symbol resolution,
+    and is reported as such (relevant_files/relevant_symbols are candidates,
+    never a guaranteed-complete set)."""
+    quoted = re.findall(r"[\"'`]([^\"'`]{2,60})[\"'`]", task)
+    if quoted:
+        return quoted[:5]
+    words = re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", task)
+    terms = [w for w in words if w.lower() not in _SAFE_CHANGE_PLAN_STOPWORDS]
+    return terms[:5]
+
+
+def _build_safe_change_plan(task: str, relevant_files: list[str], repo_info: dict[str, Any]) -> list[str]:
+    plan = [f"Understand the request: {task.strip()}"]
+    if relevant_files:
+        shown = ", ".join(relevant_files[:5])
+        suffix = f" and {len(relevant_files) - 5} more" if len(relevant_files) > 5 else ""
+        plan.append(f"Review {len(relevant_files)} candidate file(s) found by keyword search: {shown}{suffix}.")
+    else:
+        plan.append(
+            "No candidate files matched by keyword search — inspect the repository "
+            "structure manually to locate the right place to change."
+        )
+    plan.append("Make the smallest change that satisfies the request without touching unrelated code.")
+    test_command = repo_info.get("detected_test_command")
+    if test_command:
+        plan.append(f"Run the detected test command ({' '.join(test_command)}) to validate.")
+    else:
+        plan.append("No test command was detected for this repository — validation will need manual review.")
+    plan.append("Call this skill again with phase='validate' to inspect the diff and confirm nothing else broke.")
+    return plan
+
+
+def build_safe_change_artifacts(
+    repo: Path,
+    task: str,
+    *,
+    phase: str = "plan",
+    test_command: list[str] | None = None,
+    save_context: bool = False,
+) -> dict[str, Any]:
+    """Orchestrate SkillLayer's own inspection/search/test capabilities into a
+    two-phase safe-change workflow. SkillLayer never edits source files here —
+    'executed_by' is always reported as 'host_agent'; the host AI coding agent
+    performs the actual edit between the 'plan' and 'validate' calls."""
+    if phase not in ("plan", "validate"):
+        return {
+            "skill": "safe_code_change", "success": False, "phase": phase,
+            "repository_state": None, "uncommitted_work_present": None,
+            "relevant_files": [], "relevant_symbols": [], "proposed_plan": None,
+            "executed_by": "host_agent", "changed_files": [], "tests_run": False,
+            "tests_passed": None, "tests_failed": None, "validation_complete": False,
+            "test_environment": None, "selected_python": None, "tests_started": False,
+            "environment_blocker": None, "remediation": None,
+            "risks": [], "warnings": [], "next_action": "Call with phase='plan' or phase='validate'.",
+            "written_paths": [], "verdict": "UNSUPPORTED",
+            "error": f"unsupported phase: {phase!r}",
+        }
+
+    from ..tools.inspect import inspect_repo
+    repo_info = inspect_repo(repo)
+    git_artifacts, _ = build_git_status_artifacts(repo, [])
+    is_git_repo = bool(git_artifacts.get("is_git_repo"))
+    repository_state = {
+        "is_git_repo": is_git_repo,
+        "branch": git_artifacts.get("branch"),
+        "clean": git_artifacts.get("clean"),
+        "staged_count": git_artifacts.get("staged_count"),
+        "unstaged_count": git_artifacts.get("unstaged_count"),
+        "untracked_count": git_artifacts.get("untracked_count"),
+    }
+
+    if not is_git_repo:
+        return {
+            "skill": "safe_code_change", "success": False, "phase": phase,
+            "repository_state": repository_state, "uncommitted_work_present": None,
+            "relevant_files": [], "relevant_symbols": [], "proposed_plan": None,
+            "executed_by": "host_agent", "changed_files": [], "tests_run": False,
+            "tests_passed": None, "tests_failed": None, "validation_complete": False,
+            "test_environment": None, "selected_python": None, "tests_started": False,
+            "environment_blocker": None, "remediation": None,
+            "risks": ["Not a git repository — changes cannot be tracked or diffed."],
+            "warnings": [], "next_action": "Initialize git before requesting a safe change.",
+            "written_paths": [], "verdict": "BLOCKED_BY_REPOSITORY_STATE",
+        }
+
+    uncommitted_work_present = not bool(git_artifacts.get("clean", True))
+    risks: list[str] = []
+    warnings: list[str] = []
+    if uncommitted_work_present and phase == "plan":
+        # Only meaningful before any edit has happened: at phase="validate",
+        # the working tree is *expected* to be dirty — that dirt is the change
+        # being validated, not a pre-existing problem.
+        risks.append(
+            "Repository already has uncommitted or untracked changes before this "
+            "request — the eventual diff may include unrelated changes unless isolated."
+        )
+    if not repo_info.get("detected_test_command"):
+        risks.append("No test command was detected for this repository; validation cannot include automated tests.")
+
+    query_terms = _extract_change_search_terms(task)
+    relevant_files: list[str] = []
+    relevant_symbols: list[str] = []
+    for term in query_terms:
+        search_artifacts = build_search_artifacts(repo, term, mode="text", case_sensitive=False, limit=20)
+        matches = search_artifacts.get("matches", []) or []
+        if matches:
+            relevant_symbols.append(term)
+            for m in matches:
+                if m["file"] not in relevant_files:
+                    relevant_files.append(m["file"])
+    relevant_files = relevant_files[:25]
+
+    if phase == "plan":
+        proposed_plan = _build_safe_change_plan(task, relevant_files, repo_info)
+        return {
+            "skill": "safe_code_change", "success": True, "phase": "plan",
+            "repository_state": repository_state, "uncommitted_work_present": uncommitted_work_present,
+            "relevant_files": relevant_files, "relevant_symbols": relevant_symbols,
+            "proposed_plan": proposed_plan, "executed_by": "host_agent",
+            "changed_files": [], "tests_run": False, "tests_passed": None, "tests_failed": None,
+            "validation_complete": False, "risks": risks, "warnings": warnings,
+            "test_environment": None, "selected_python": None, "tests_started": False,
+            "environment_blocker": None, "remediation": None,
+            "next_action": "Ask the host agent to implement the plan, then call again with phase='validate'.",
+            "written_paths": [], "verdict": "READY_TO_IMPLEMENT",
+        }
+
+    # phase == "validate": inspect the diff the host agent produced and run tests.
+    changed_files = [f["path"] for f in git_artifacts.get("changed_files", []) or []]
+    tests_run = False
+    tests_passed: bool | None = None
+    tests_failed: int | None = None
+    test_environment: dict[str, Any] | None = None
+    selected_python: str | None = None
+    tests_started = False
+    environment_blocker: dict[str, Any] | None = None
+    remediation: dict[str, Any] | None = None
+    if test_command or repo_info.get("detected_test_command"):
+        test_result = (
+            TestRunner().run_command(repo, test_command, allow_nested=True)
+            if test_command
+            else TestRunner().run(repo)
+        )
+        run_artifacts = build_run_tests_artifacts(test_result)
+        tests_run = bool(run_artifacts.get("tests_run"))
+        tests_passed = run_artifacts.get("tests_passed")
+        test_environment = run_artifacts.get("execution_environment")
+        selected_python = run_artifacts.get("selected_python")
+        tests_started = bool(run_artifacts.get("tests_started", tests_run))
+        remediation = run_artifacts.get("remediation")
+        if run_artifacts.get("environment_error"):
+            environment_blocker = {
+                "code": run_artifacts.get("environment_error_code"),
+                "message": run_artifacts.get("environment_error_message"),
+                "remediation": remediation,
+            }
+            warnings.append(
+                "Tests did not start because the execution environment was incomplete; "
+                "code correctness was not established."
+            )
+        failed_tests = run_artifacts.get("failed_tests") or []
+        tests_failed = len(failed_tests) if failed_tests else (0 if tests_passed else None)
+        if tests_run and not tests_passed:
+            risks.append("Tests failed after the change.")
+    else:
+        warnings.append("No test command detected or provided; tests were not run.")
+
+    written_paths: list[str] = []
+    if save_context:
+        state = (
+            f"Safe code change: {task.strip()}. "
+            f"Changed files: {', '.join(changed_files) if changed_files else 'none detected'}. "
+            f"Tests run: {tests_run}, passed: {tests_passed}."
+        )
+        save_artifacts = build_save_context_artifacts(repo, state, [])
+        written_paths = list(save_artifacts.get("written_paths", []) or [])
+
+    if not changed_files:
+        verdict, success = "CHANGE_INCOMPLETE", False
+        next_action = "No changed files were detected yet. Make the change, then call again with phase='validate'."
+    elif environment_blocker:
+        verdict, success = "CHANGE_INCOMPLETE", False
+        command = (remediation or {}).get("remediation_command")
+        next_action = (
+            f"Review and run this command yourself, then retry validation: {command}"
+            if command else "Repair the reported test environment, then rerun validation; the change was not classified as a test failure."
+        )
+    elif tests_run and not tests_passed:
+        verdict, success = "VALIDATION_FAILED", False
+        next_action = "Fix the failing tests, then call again with phase='validate'."
+    elif not tests_run or risks:
+        verdict, success = "CHANGE_VALIDATED_WITH_WARNINGS", True
+        next_action = "Review the flagged warnings/risks before committing."
+    else:
+        verdict, success = "CHANGE_VALIDATED", True
+        next_action = "Ready to commit."
+
+    return {
+        "skill": "safe_code_change", "success": success, "phase": "validate",
+        "repository_state": repository_state, "uncommitted_work_present": uncommitted_work_present,
+        "relevant_files": relevant_files, "relevant_symbols": relevant_symbols,
+        "proposed_plan": None, "executed_by": "host_agent",
+        "changed_files": changed_files, "tests_run": tests_run, "tests_passed": tests_passed,
+        "tests_failed": tests_failed, "validation_complete": tests_run and not bool(environment_blocker),
+        "test_environment": test_environment, "selected_python": selected_python,
+        "tests_started": tests_started, "environment_blocker": environment_blocker,
+        "remediation": remediation,
+        "risks": risks, "warnings": warnings, "next_action": next_action,
+        "written_paths": written_paths, "verdict": verdict,
+    }
+
+
+def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict[str, Any]:
+    """Aggregate existing read-only SkillLayer inspections into one bounded
+    release-readiness verdict. Never certifies a repository as secure; an
+    incomplete check always reduces confidence rather than becoming success.
+    Bounded by default (deep=False: detects the test command without running
+    the suite); pass deep=True to actually execute it via TestRunner."""
+    checks_requested = [
+        "repository_inspection", "git_status", "secret_scan", "dependency_inspection",
+        "memory_integrity", "packaging_metadata", "hidden_write_self_check", "test_status",
+    ]
+    checks_completed: list[str] = []
+    checks_incomplete: list[dict[str, str]] = []
+    findings: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    warnings: list[str] = []
+    platform_limitations: list[str] = [
+        "Public/private artifact boundary and cross-document consistency checks "
+        "require a repo-specific manifest and are not run generically.",
+    ]
+
+    from ..tools.inspect import inspect_repo
+    repo_info = inspect_repo(repo)
+    checks_completed.append("repository_inspection")
+
+    git_artifacts, _ = build_git_status_artifacts(repo, [])
+    checks_completed.append("git_status")
+    git_status = {
+        "is_git_repo": git_artifacts.get("is_git_repo"),
+        "branch": git_artifacts.get("branch"),
+        "clean": git_artifacts.get("clean"),
+        "staged_count": git_artifacts.get("staged_count"),
+        "unstaged_count": git_artifacts.get("unstaged_count"),
+        "untracked_count": git_artifacts.get("untracked_count"),
+    }
+    if git_artifacts.get("is_git_repo") and not git_artifacts.get("clean"):
+        warnings.append("Working tree has uncommitted or untracked changes.")
+
+    skilllayer_dir = repo / ".skilllayer"
+    existed_before = skilllayer_dir.exists()
+    before_files = set(skilllayer_dir.rglob("*")) if existed_before else set()
+
+    secret_artifacts = build_detect_secrets_artifacts(repo)
+    checks_completed.append("secret_scan")
+    secret_scan_status = secret_artifacts.get("status", "error")
+    for finding in secret_artifacts.get("findings", []) or []:
+        severity = finding.get("severity", "unknown")
+        findings.append({
+            "check": "secret_scan", "severity": severity, "file": finding.get("file"),
+            "line": finding.get("line"), "pattern": finding.get("pattern_name"),
+            "likely_test_fixture": finding.get("likely_test_fixture", False),
+        })
+        if severity == "critical" and not finding.get("likely_test_fixture"):
+            blockers.append(f"Potential secret ({finding.get('pattern_name')}) in {finding.get('file')}:{finding.get('line')}")
+    if secret_scan_status == "incomplete":
+        checks_incomplete.append({"check": "secret_scan", "reason": "scan skipped some files that could hide a real secret"})
+        warnings.append("Secret scan was incomplete — do not treat this as a clean bill of health.")
+
+    dep_artifacts = build_map_dependencies_artifacts(repo)
+    checks_completed.append("dependency_inspection")
+    dependency_status = {
+        "files_parsed": dep_artifacts.get("files_parsed", []),
+        "files_not_found": dep_artifacts.get("files_not_found", []),
+        "total_dependencies": dep_artifacts.get("total_dependencies", 0),
+        "unpinned_count": dep_artifacts.get("unpinned_count", 0),
+        "unpinned_names": dep_artifacts.get("unpinned_names", []),
+    }
+    if not dep_artifacts.get("files_parsed"):
+        checks_incomplete.append({"check": "dependency_inspection", "reason": "no recognized dependency manifest found"})
+
+    if existed_before:
+        memory_artifacts = build_validate_memory_artifacts(repo)
+        checks_completed.append("memory_integrity")
+        broken = memory_artifacts.get("summary", {}).get("broken_count", 0)
+        if broken:
+            blockers.append(f"SkillLayer memory store has {broken} broken integrity finding(s).")
+    else:
+        checks_incomplete.append({"check": "memory_integrity", "reason": "no .skilllayer/ store present in this repo"})
+
+    pyproject = repo / "pyproject.toml"
+    setup_py = repo / "setup.py"
+    package_status: dict[str, Any] = {"pyproject_toml": pyproject.exists(), "setup_py": setup_py.exists()}
+    if pyproject.exists():
+        try:
+            import tomllib
+            with pyproject.open("rb") as fh:
+                tomllib.load(fh)
+            package_status["pyproject_parses"] = True
+        except Exception as exc:
+            package_status["pyproject_parses"] = False
+            blockers.append(f"pyproject.toml does not parse: {exc}")
+    checks_completed.append("packaging_metadata")
+    if not pyproject.exists() and not setup_py.exists():
+        checks_incomplete.append({"check": "packaging_metadata", "reason": "no pyproject.toml or setup.py found"})
+
+    detected_test_command = repo_info.get("detected_test_command")
+    test_environment_incomplete = False
+    remediation: dict[str, Any] | None = None
+    if detected_test_command:
+        if deep:
+            test_result = TestRunner().run(repo)
+            run_artifacts = build_run_tests_artifacts(test_result)
+            test_status = {
+                "mode": "deep", "detected_test_command": detected_test_command,
+                "tests_run": run_artifacts.get("tests_run"), "tests_passed": run_artifacts.get("tests_passed"),
+                "outcome": run_artifacts.get("outcome"),
+                "execution_environment": run_artifacts.get("execution_environment"),
+                "selected_python": run_artifacts.get("selected_python"),
+                "selection_source": run_artifacts.get("selection_source"),
+                "fallback_used": run_artifacts.get("fallback_used", False),
+                "tests_started": run_artifacts.get("tests_started", False),
+                "environment_error": run_artifacts.get("environment_error", False),
+                "environment_error_code": run_artifacts.get("environment_error_code"),
+                "remediation": run_artifacts.get("remediation"),
+            }
+            checks_completed.append("test_status")
+            if run_artifacts.get("environment_error"):
+                remediation = run_artifacts.get("remediation")
+                test_environment_incomplete = True
+                checks_incomplete.append({
+                    "check": "test_status",
+                    "reason": "test environment prevented collection; code correctness was not established",
+                })
+                warnings.append("Deep test validation is incomplete because the selected environment could not start tests.")
+            elif run_artifacts.get("tests_run") and not run_artifacts.get("tests_passed"):
+                blockers.append("Test suite failed.")
+        else:
+            test_status = {
+                "mode": "bounded", "detected_test_command": detected_test_command,
+                "tests_run": False, "tests_passed": None,
+                "note": "tests were detected but not executed in bounded mode; pass deep=True to run them",
+            }
+            checks_incomplete.append({"check": "test_status", "reason": "bounded mode — detected but not executed"})
+    else:
+        test_status = {"mode": "deep" if deep else "bounded", "detected_test_command": None, "tests_run": False, "tests_passed": None}
+        checks_incomplete.append({"check": "test_status", "reason": "no test command detected"})
+
+    after_files = set(skilllayer_dir.rglob("*")) if skilllayer_dir.exists() else set()
+    hidden_write_detected = (not existed_before and skilllayer_dir.exists()) or bool(after_files - before_files)
+    checks_completed.append("hidden_write_self_check")
+    if hidden_write_detected:
+        blockers.append("This read-only scan unexpectedly created or modified files under .skilllayer/.")
+
+    # Not generically applicable checks: always disclosed via
+    # platform_limitations, but they never gate the top verdict — they were
+    # never part of checks_requested, so they must not silently make
+    # READY_FOR_CAREFUL_TESTERS unreachable for every ordinary repository.
+    platform_limitations.append(
+        "No generic cross-document consistency checker exists yet; documentation "
+        "consistency was not checked."
+    )
+
+    if blockers:
+        verdict = "NOT_READY"
+    elif test_environment_incomplete or secret_scan_status == "incomplete" or hidden_write_detected:
+        verdict = "INCOMPLETE_ASSESSMENT"
+    elif checks_incomplete:
+        verdict = "READY_WITH_KNOWN_LIMITATIONS"
+    else:
+        verdict = "READY_FOR_CAREFUL_TESTERS"
+
+    return {
+        "skill": "release_readiness",
+        "success": True,
+        "checks_requested": checks_requested,
+        "checks_completed": checks_completed,
+        "checks_incomplete": checks_incomplete,
+        "findings": findings,
+        "blockers": blockers,
+        "warnings": warnings,
+        "secret_scan_status": secret_scan_status,
+        "test_status": test_status,
+        "remediation": remediation,
+        "package_status": package_status,
+        "git_status": git_status,
+        "dependency_status": dependency_status,
+        "platform_limitations": platform_limitations,
+        "written_paths": [],
+        "verdict": verdict,
+    }
+
+
+_RESUME_LABELS = ("PURPOSE", "OBJECTIVE", "CONSTRAINTS", "COMPLETED", "NEXT STEP")
+
+
+def _parse_structured_resume_state(state_text: str) -> dict[str, str | None]:
+    """Parse the PURPOSE/OBJECTIVE/CONSTRAINTS/COMPLETED/NEXT STEP convention
+    used by this project's own save_context calls. Pure regex — zero LLM
+    calls. Repos that saved unstructured free text simply get all-None here;
+    callers fall back to the raw state text (see project_summary)."""
+    parsed: dict[str, str | None] = {label: None for label in _RESUME_LABELS}
+    if not state_text:
+        return parsed
+    label_alt = "|".join(re.escape(label) for label in _RESUME_LABELS)
+    pattern = re.compile(rf"^({label_alt}):\s*(.*?)(?=\n(?:{label_alt}):|\Z)", re.MULTILINE | re.DOTALL)
+    for match in pattern.finditer(state_text):
+        parsed[match.group(1)] = match.group(2).strip()
+    return parsed
+
+
+def build_resume_work_artifacts(
+    repo: Path,
+    *,
+    confirm_update: bool = False,
+    new_state: str | None = None,
+    new_open_questions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Reconstruct project state for a brand-new session from saved memory
+    alone. Never overwrites memory unless confirm_update=True and new_state is
+    given explicitly — resume itself is always read-only by default."""
+    memory_artifacts = build_validate_memory_artifacts(repo)
+    memory_health = {
+        "store_exists": memory_artifacts.get("store_exists", False),
+        "status": memory_artifacts.get("status"),
+        "summary": memory_artifacts.get("summary", {}),
+    }
+    broken = memory_artifacts.get("summary", {}).get("broken_count", 0)
+
+    if not memory_artifacts.get("store_exists"):
+        return {
+            "skill": "resume_project_work", "success": True,
+            "project_summary": None, "last_objective": None, "completed_work": None,
+            "constraints": None, "remembered_next_action": None,
+            "current_repository_state": None, "detected_drift": None, "unfinished_work": None,
+            "uncertainty": ["No .skilllayer/ memory store exists yet for this repository — nothing has been saved."],
+            "recommended_next_action": "Save context (e.g. via skilllayer_save_context) before relying on resume.",
+            "memory_health": memory_health, "written_paths": [], "verdict": "NO_SAVED_CONTEXT",
+        }
+
+    if broken:
+        return {
+            "skill": "resume_project_work", "success": False,
+            "project_summary": None, "last_objective": None, "completed_work": None,
+            "constraints": None, "remembered_next_action": None,
+            "current_repository_state": None, "detected_drift": None, "unfinished_work": None,
+            "uncertainty": [f"Memory store has {broken} broken integrity finding(s); saved context may be unreliable."],
+            "recommended_next_action": "Run skilllayer_validate_memory for details and repair before resuming.",
+            "memory_health": memory_health, "written_paths": [], "verdict": "MEMORY_UNHEALTHY",
+        }
+
+    rehydrate_artifacts = build_rehydrate_context_artifacts(repo, full_context=True)
+    context_text = rehydrate_artifacts.get("context") or ""
+    state_match = re.search(r"## State\n(.*?)(?:\n## |\Z)", context_text, re.DOTALL)
+    state_text = state_match.group(1).strip() if state_match else ""
+
+    if not state_text:
+        return {
+            "skill": "resume_project_work", "success": True,
+            "project_summary": None, "last_objective": None, "completed_work": None,
+            "constraints": None, "remembered_next_action": None,
+            "current_repository_state": None, "detected_drift": None, "unfinished_work": None,
+            "uncertainty": ["Memory store exists but no context snapshot has been saved yet."],
+            "recommended_next_action": "Save context before relying on resume.",
+            "memory_health": memory_health, "written_paths": [], "verdict": "NO_SAVED_CONTEXT",
+        }
+
+    parsed = _parse_structured_resume_state(state_text)
+    structured = any(parsed.values())
+    uncertainty: list[str] = []
+    if not structured:
+        uncertainty.append(
+            "Saved context is not in the PURPOSE/OBJECTIVE/CONSTRAINTS/COMPLETED/NEXT STEP "
+            "format; returning the raw saved text as project_summary only."
+        )
+
+    git_artifacts, _ = build_git_status_artifacts(repo, [])
+    current_repository_state = {
+        "is_git_repo": git_artifacts.get("is_git_repo"),
+        "branch": git_artifacts.get("branch"),
+        "clean": git_artifacts.get("clean"),
+        "untracked_count": git_artifacts.get("untracked_count"),
+        "staged_count": git_artifacts.get("staged_count"),
+        "unstaged_count": git_artifacts.get("unstaged_count"),
+    }
+
+    activity_artifacts = build_detect_activity_artifacts(repo, persist_snapshot=False)
+    first_run = activity_artifacts.get("first_run", True)
+    activity_summary = activity_artifacts.get("summary", {}) or {}
+    detected_drift = {
+        "first_run": first_run,
+        "commit_count": activity_summary.get("commit_count", 0),
+        "files_changed_count": activity_summary.get("files_changed_count", 0),
+        "branches_changed": activity_artifacts.get("branches_changed", []),
+        "active_since": activity_summary.get("active_since", False),
+    }
+    has_drift = bool(not first_run and activity_summary.get("active_since"))
+    if first_run:
+        uncertainty.append("No prior activity snapshot to compare against yet — drift detection has no baseline.")
+
+    needs_wrap = rehydrate_artifacts.get("needs_wrap") or {}
+    if needs_wrap.get("status") == "unknown":
+        uncertainty.append("Unsaved-work status is unknown — WatchFileChanges has never been run to establish a baseline.")
+    unfinished_work = {
+        "needs_wrap_status": needs_wrap.get("status"),
+        "changed_count": needs_wrap.get("changed_count"),
+        "untracked_git_files": git_artifacts.get("untracked_count", 0),
+    }
+
+    written_paths: list[str] = []
+    if confirm_update and new_state:
+        save_artifacts = build_save_context_artifacts(repo, new_state, new_open_questions or [])
+        written_paths = list(save_artifacts.get("written_paths", []) or [])
+
+    project_summary = (parsed.get("PURPOSE") or state_text) if structured else state_text
+    verdict = "CONTEXT_INCOMPLETE" if not structured else ("READY_WITH_REPOSITORY_DRIFT" if has_drift else "READY_TO_CONTINUE")
+
+    return {
+        "skill": "resume_project_work",
+        "success": True,
+        "project_summary": project_summary,
+        "last_objective": parsed.get("OBJECTIVE"),
+        "completed_work": parsed.get("COMPLETED"),
+        "constraints": parsed.get("CONSTRAINTS"),
+        "remembered_next_action": parsed.get("NEXT STEP"),
+        "current_repository_state": current_repository_state,
+        "detected_drift": detected_drift,
+        "unfinished_work": unfinished_work,
+        "uncertainty": uncertainty,
+        "recommended_next_action": parsed.get("NEXT STEP") or "Review the raw saved context and decide the next step.",
+        "memory_health": memory_health,
+        "written_paths": written_paths,
+        "verdict": verdict,
+    }
+
+
 def flatten_workflow_artifacts(workflow: str, artifacts: dict[str, Any]) -> dict[str, Any]:
+    if workflow in ("SafeCodeChangeWorkflow", "ReleaseReadinessWorkflow", "ResumeProjectWorkWorkflow"):
+        # These builders already return their full, final top-level shape
+        # (skill/verdict/etc.) — nothing to promote, just pass it through so
+        # skilllayer_run's generic envelope and the dedicated MCP tool return
+        # equivalent results.
+        return dict(artifacts)
     if workflow == "ClarifyIntentWorkflow":
         return {
             "matched": bool(artifacts.get("matched", False)),

@@ -221,6 +221,30 @@ WORKFLOWS = {
         "CheckIdCounters",
         "BuildIntegrityReport",
     ],
+    "SafeCodeChangeWorkflow": [
+        "InspectRepoStructure",
+        "InspectGitStatus",
+        "IdentifyRelevantFilesAndSymbols",
+        "ProduceBoundedChangePlan",
+        "ValidateResultingDiff",
+        "RunFocusedTests",
+    ],
+    "ReleaseReadinessWorkflow": [
+        "InspectRepo",
+        "InspectGitState",
+        "DetectSecretsHonestly",
+        "InspectPackagingMetadata",
+        "InspectDependencyStatus",
+        "InspectTestStatus",
+        "SummarizeBlockersAndLimitations",
+    ],
+    "ResumeProjectWorkWorkflow": [
+        "RehydrateSavedContext",
+        "ValidateMemory",
+        "InspectCurrentGitStatus",
+        "CompareWithRememberedState",
+        "IdentifyNextAction",
+    ],
 }
 
 WRITE_BEHAVIORS = frozenset({
@@ -609,6 +633,39 @@ WORKFLOW_METADATA = {
         "summary": "Check the .skilllayer/ memory store for internal consistency: 20 deterministic checks across INDEX.md freshness (vs. a freshly regenerated index), decision supersession chain integrity (dangling supersedes/superseded_by, status mismatches, cycles including self-reference, duplicate ids), frontmatter/schema validity per file type (context/latest.md, decisions/*.md, preferences.md, todos.json), and .state.json id-counter drift (next_decision_id/next_todo_id behind the highest existing id). Returns store_exists (false if no store yet — zero checks run, never a crash), summary {checks_run, passed, warnings, broken}, and a flat findings[] list (check/severity/file/message/suggested_fix). Standalone, on-demand — unlike NeedsWrap, not run automatically on every memory write, since it fully parses every decision file and walks the supersession graph. Read-only, never repairs anything — suggested fixes are text only. Zero LLM calls — purely deterministic.",
         **_write_capability("read_only"),
     },
+    "SafeCodeChangeWorkflow": {
+        "stability": "stable",
+        "summary": "Professional skill: orchestrates repository/git inspection, keyword-based relevant-file search, a bounded change plan (phase='plan'), and post-edit diff/test validation (phase='validate') into one bounded verdict. SkillLayer never edits source files itself — the host AI coding agent performs the actual change between the two calls; executed_by is always reported as 'host_agent'. Optionally saves a context snapshot on validate. Zero LLM calls.",
+        **_write_capability(
+            "external_side_effects_possible",
+            state_locations=(
+                ".skilllayer/.memory.lock",
+                ".skilllayer/context/latest.md",
+                ".skilllayer/context/history/*.md",
+                ".skilllayer/INDEX.md",
+            ),
+            may_dirty_worktree=True,
+        ),
+    },
+    "ReleaseReadinessWorkflow": {
+        "stability": "stable",
+        "summary": "Professional skill: aggregates repository inspection, git status, honest secret scanning, dependency inspection (unknown semantics preserved), memory integrity, and packaging metadata into one bounded release verdict. Bounded by default — detects the test command without running it (pass deep=True to execute the suite). Never certifies a repository as secure; any incomplete or skipped check reduces the verdict rather than becoming a false READY. Zero LLM calls, read-only (deep=True may execute the target repository's own test suite).",
+        **_write_capability("external_side_effects_possible"),
+    },
+    "ResumeProjectWorkWorkflow": {
+        "stability": "stable",
+        "summary": "Professional skill: rehydrates saved .skilllayer/ context, validates memory integrity, inspects current git status, and compares against the last saved activity snapshot to report completed work, constraints, next action, and detected drift for a brand-new session. Always read-only unless confirm_update=True is passed together with new_state — memory is never overwritten implicitly. Zero LLM calls.",
+        **_write_capability(
+            "stateful",
+            state_locations=(
+                ".skilllayer/.memory.lock",
+                ".skilllayer/context/latest.md",
+                ".skilllayer/context/history/*.md",
+                ".skilllayer/INDEX.md",
+            ),
+            may_dirty_worktree=True,
+        ),
+    },
 }
 
 COMMAND_METADATA = {
@@ -702,6 +759,9 @@ TASK_ROUTES = {
     # Read-only no-match fallback. Ambiguous prose lands here (never on a
     # write-capable workflow) and gets a "did you mean ...?" clarification.
     "clarify_intent": {"workflow": "ClarifyIntentWorkflow", "macro": "SuggestWorkflows"},
+    "safe_code_change": {"workflow": "SafeCodeChangeWorkflow", "macro": "ProduceBoundedChangePlan"},
+    "release_readiness": {"workflow": "ReleaseReadinessWorkflow", "macro": "SummarizeBlockersAndLimitations"},
+    "resume_project_work": {"workflow": "ResumeProjectWorkWorkflow", "macro": "IdentifyNextAction"},
     "find_function": {"workflow": "FindFunctionWorkflow", "macro": "LocateRelevantCode"},
     "fix_simple_bug": {"workflow": "FixBugWorkflow", "macro": "ApplySmallCodeChange"},
     "rename_symbol": {"workflow": "RenameSymbolWorkflow", "macro": "RenameSymbolSafely"},

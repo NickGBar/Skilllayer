@@ -224,7 +224,11 @@ class TestCorruptTodosJsonCrossSurface:
 # ---------------------------------------------------------------------------
 
 class TestLockTimeoutCrossSurface:
-    def _hold_lock(self, tmp_path, name: str, hold_seconds: float = 11.0):
+    def _hold_lock(self, tmp_path, name: str, hold_seconds: float = 16.0):
+        # The production timeout is 10 seconds.  Keep a real scheduling margin
+        # beyond it: a one-second margin occasionally elapsed while this full
+        # suite was under load, letting a surface acquire the lock and making
+        # this deterministic timeout test flaky.
         sk = tmp_path / name / ".skilllayer"
         sk.mkdir(parents=True)
         add_todo(sk, "seed")  # give .state.json/todos.json real content to protect

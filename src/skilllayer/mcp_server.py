@@ -16,7 +16,7 @@ from .config.defaults import COMMAND_METADATA, MACROS, WORKFLOWS, WORKFLOW_METAD
 from .memory.skilllayer_memory import MEMORY_LOCK_CROSS_PROCESS_SUPPORTED
 from .router import SkillRouter
 from .security import blocked_workflow_reason, workflow_execution_blocked
-from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_remember_preferences_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
+from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
 from .session_usage import build_session_usage_artifacts
 from .telemetry import automatic_telemetry_enabled, record_tool_invocation, tool_telemetry_paths
 from .tools import inspect_repo
@@ -1002,6 +1002,128 @@ def skilllayer_detect_secrets(repo_path: str) -> dict[str, Any]:
         return result
 
 
+def skilllayer_safe_change(
+    repo_path: str,
+    task: str,
+    phase: str = "plan",
+    test_command: list[str] | None = None,
+    save_context: bool = False,
+) -> dict[str, Any]:
+    """Plan and validate a code change safely — SkillLayer never edits files itself.
+
+    Two-phase professional skill:
+    - phase="plan" (default): inspects the repository and git status, searches
+      for files/symbols relevant to the task description, and returns a
+      bounded change plan plus whether the repository already has
+      uncommitted work (verdict: READY_TO_IMPLEMENT, or
+      BLOCKED_BY_REPOSITORY_STATE if it isn't a git repository).
+    - phase="validate": call again after the host AI coding agent has made the
+      actual edit. Inspects the resulting git diff, runs the repository's
+      detected test command (or an explicit test_command list), and returns
+      changed files, test results, risks, and a bounded verdict
+      (CHANGE_VALIDATED / CHANGE_VALIDATED_WITH_WARNINGS / CHANGE_INCOMPLETE /
+      VALIDATION_FAILED). Never reports a validated verdict when no changed
+      files were found or when validation did not actually run.
+
+    executed_by is always "host_agent": SkillLayer inspects, plans, and
+    validates; the calling AI agent performs the actual code edit. Pass
+    save_context=True on the validate call to persist a summary snapshot
+    under .skilllayer/ (written_paths discloses exactly what was written).
+    Zero LLM calls."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_safe_change", repo, started)
+        return repo
+    try:
+        result = build_safe_change_artifacts(
+            repo, task, phase=phase, test_command=test_command, save_context=save_context,
+        )
+        result.setdefault("workflow", "SafeCodeChangeWorkflow")
+        record_mcp_telemetry("skilllayer_safe_change", result, started)
+        return result
+    except Exception as exc:
+        result = {
+            "skill": "safe_code_change", "success": False, "repo_path": str(repo),
+            "error": str(exc), "verdict": "UNSUPPORTED",
+        }
+        record_mcp_telemetry("skilllayer_safe_change", result, started)
+        return result
+
+
+def skilllayer_release_readiness(repo_path: str, deep: bool = False) -> dict[str, Any]:
+    """Assess whether a repository is ready for careful external release.
+
+    Aggregates repository inspection, git status, an honest secret scan,
+    dependency inspection (unrecognized manifests are reported, never assumed
+    clean), memory-store integrity, and packaging metadata into one bounded
+    verdict. Bounded by default: detects the test command without running it.
+    Pass deep=True to actually execute the repository's own test suite.
+
+    Never certifies a repository as secure and never treats an incomplete or
+    skipped check as clean — any such gap is listed under checks_incomplete
+    and reduces the verdict (to INCOMPLETE_ASSESSMENT or
+    READY_WITH_KNOWN_LIMITATIONS) rather than becoming a false READY.
+    Read-only except when deep=True, which executes the target repository's
+    own tests. Zero LLM calls."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_release_readiness", repo, started)
+        return repo
+    try:
+        result = build_release_readiness_artifacts(repo, deep=deep)
+        result.setdefault("workflow", "ReleaseReadinessWorkflow")
+        record_mcp_telemetry("skilllayer_release_readiness", result, started)
+        return result
+    except Exception as exc:
+        result = {
+            "skill": "release_readiness", "success": False, "repo_path": str(repo),
+            "error": str(exc), "verdict": "INCOMPLETE_ASSESSMENT",
+        }
+        record_mcp_telemetry("skilllayer_release_readiness", result, started)
+        return result
+
+
+def skilllayer_resume_work(
+    repo_path: str,
+    confirm_update: bool = False,
+    new_state: str | None = None,
+    new_open_questions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Reconstruct project state for a brand-new session from saved memory alone.
+
+    Rehydrates the saved .skilllayer/ context, validates memory integrity,
+    inspects current git status, and compares against the last saved activity
+    snapshot to report completed work, constraints, the remembered next
+    action, and any drift detected since that snapshot. Reports uncertainty
+    honestly (e.g. no baseline snapshot yet, or unsaved-work status unknown)
+    rather than guessing.
+
+    Always read-only unless confirm_update=True is passed together with
+    new_state — memory is never overwritten implicitly. Zero LLM calls."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_resume_work", repo, started)
+        return repo
+    try:
+        result = build_resume_work_artifacts(
+            repo, confirm_update=confirm_update, new_state=new_state,
+            new_open_questions=new_open_questions,
+        )
+        result.setdefault("workflow", "ResumeProjectWorkWorkflow")
+        record_mcp_telemetry("skilllayer_resume_work", result, started)
+        return result
+    except Exception as exc:
+        result = {
+            "skill": "resume_project_work", "success": False, "repo_path": str(repo),
+            "error": str(exc), "verdict": "UNSUPPORTED",
+        }
+        record_mcp_telemetry("skilllayer_resume_work", result, started)
+        return result
+
+
 def skilllayer_list_branches(repo_path: str) -> dict[str, Any]:
     """List all local and remote git branches with metadata.
 
@@ -1690,6 +1812,7 @@ MCP_TOOL_HANDLERS = (
     skilllayer_detect_dead_code, skilllayer_map_dependencies, skilllayer_save_context,
     skilllayer_track_decision, skilllayer_remember_preferences, skilllayer_rehydrate_context,
     skilllayer_list_workflows, skilllayer_list_skills, skilllayer_doctor,
+    skilllayer_safe_change, skilllayer_release_readiness, skilllayer_resume_work,
 )
 
 
