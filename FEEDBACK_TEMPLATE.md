@@ -54,22 +54,17 @@ explicitly choose to approve that specific information.
 11. After restarting the client, what project details were correct, missing, or
     irrelevant?
 
-## Value and commercial intent
+## Value and optional future-product feedback
 
 12. Did SkillLayer save time, reduce risk, or neither?
 13. Would you use it on another repository tomorrow? [ ] yes [ ] no — why?
 14. Would you keep it installed? [ ] yes [ ] no — why?
 15. Would you recommend it to another AI coding-agent user? [ ] yes [ ] no — why?
-16. Would you pay today? Choose one:
-    - [ ] $0
-    - [ ] $10/month
-    - [ ] $20/month
-    - [ ] $50/month
-    - [ ] one-time $49
-    - [ ] one-time $99
-17. What must change before you would pay?
-18. After the session, choose one beta response: [ ] paid beta [ ] free testing
-    only [ ] decline
+16. Would you consider paying for a mature version of SkillLayer? [ ] yes [ ] no
+    [ ] unsure
+17. What would need to change before you would consider it?
+18. Would you like to continue receiving optional early-access updates? [ ] yes
+    [ ] no
 
 ## Optional diagnostic bundle
 

@@ -9,7 +9,7 @@ say what you think is happening before asking for help.
 
 **Time:** 15–25 minutes.
 **Public repository:** https://github.com/NickGBar/Skilllayer
-**Canonical installation page:** [README — Install and MCP](../README.md#install)
+**Canonical installation page:** [Install with your AI coding agent](../INSTALL_WITH_AI.md)
 
 ## Before you begin
 
@@ -128,8 +128,8 @@ Do not show this section before the independent attempt. For each tester,
 record: time to understand, install, MCP discovery, and first useful result;
 failed commands; interventions; manual configuration edits; skill-routing
 attempts and correct selections; remediation completion; memory restart;
-disable/uninstall outcome; use-again answer; payment answer; and the chosen
-beta response. Record an intervention whenever the ten-minute rule is used.
+disable/uninstall outcome; and use-again answer. Record an intervention whenever
+the ten-minute rule is used.
 
 After both sessions, classify each observation as exactly one of:
 `COMMERCIAL_BLOCKER`, `INSTALL_BLOCKER`, `MCP_BLOCKER`,
@@ -138,10 +138,9 @@ After both sessions, classify each observation as exactly one of:
 `USER_ERROR`, or `DOCUMENTATION_GAP`.
 
 Rank findings by testers affected, prevented task completion, trust damage,
-effect on payment willingness, and estimated fix size. Keep compliments,
-stated price preferences, beta decisions, and actual payments separate. Select
-the paid-beta decision only after both sessions; successful installation is not
-evidence of product value or demand.
+effect on future willingness to pay, and estimated fix size. Keep compliments,
+optional interest, and actual commitments separate. Successful installation is
+not evidence of product value or demand.
 
 ## Submit feedback and optional diagnostics
 
@@ -156,15 +155,8 @@ Useful diagnostics are SkillLayer version, macOS and Python versions, command
 names and exit codes, structured error codes, sanitized stderr, selected Python
 path with the username masked, skill verdicts, and elapsed times.
 
-## After feedback: one beta offer
+## After feedback: optional early-access follow-up
 
-Only after you have completed the feedback form, the facilitator may ask for a
-decision on one offer:
-
-> **SkillLayer Professional Beta — $49 one-time.** Includes Safe Code Change,
-> Release Readiness, Resume Project Work, founder-supported onboarding, and
-> early updates. Would you join the paid beta, join free testing only, or
-> decline?
-
-There is no obligation and no discount discussion before the feedback is
-recorded.
+SkillLayer is free early access. A facilitator may ask whether the tester wants
+to receive future early-access updates or would consider paying for a mature
+version. There is no obligation, account, or payment request.

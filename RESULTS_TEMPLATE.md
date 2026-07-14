@@ -40,7 +40,7 @@ private remotes, or unrelated MCP configuration.
 
 - In one sentence, what does SkillLayer do?
 - Most useful skill, least trusted output, would use again, would keep installed, would try on a second repository
-- Would pay $49 one-time, what must change before paying, would join paid beta
+- Would consider paying for a mature version, what must change before considering it
 
 ## Consent
 

@@ -1,11 +1,11 @@
-name: Beta interest
-description: Request SkillLayer Professional Beta instructions after trying the sandbox.
-title: "[Beta] "
+name: Early access feedback
+description: Share optional, sanitized feedback after installation or a sandbox trial.
+title: "[Early access] "
 labels: [beta-interest]
 body:
   - type: markdown
     attributes:
-      value: "Do not include source code, API keys, credentials, .env contents, private repository URLs, payment details, or unrelated MCP configuration."
+      value: "Do not include source code, API keys, credentials, .env contents, private paths or repository URLs, payment details, or unrelated MCP configuration."
   - type: input
     id: coding-agent
     attributes: { label: Coding agent used, placeholder: "Claude Code, Codex, Cursor, or other" }
@@ -21,16 +21,12 @@ body:
   - type: checkboxes
     id: sandbox
     attributes:
-      label: Sandbox
+      label: Early-access experience
       options:
-        - label: I am willing to test the disposable sandbox first.
-          required: true
-        - label: I completed the sandbox test or understand that it is recommended first.
-          required: true
-        - label: I would consider the $49 one-time beta.
+        - label: I completed the disposable sandbox test.
           required: false
-        - label: I consent to receive beta instructions through GitHub.
-          required: true
+        - label: I would consider paying for a mature version of this product.
+          required: false
   - type: textarea
     id: sanitized-feedback
     attributes: { label: Optional sanitized feedback, description: "Do not include source code, credentials, private paths, or MCP configuration." }

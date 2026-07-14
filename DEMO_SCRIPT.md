@@ -64,7 +64,8 @@ Highlight recovered objective, environment constraint, and next action.
 
 ## Final frame
 
-Text: “Try the safe sandbox. SkillLayer Professional Beta — $49 one-time.”
+Text: “Free early access. Install with one prompt, then try the safe sandbox.”
 
-Show the GitHub sandbox link and Beta Interest issue link. Do not show private
+Show the installation-guide link, GitHub sandbox link, and optional feedback
+issue link. Do not show private
 paths, source code, terminal history, usernames, tokens, or unrelated tabs.

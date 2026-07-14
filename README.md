@@ -24,11 +24,22 @@ repository; Windows installer logic is checked statically, not executed here.
 MCP integration is verified end-to-end with Claude Code and Codex; Cursor is
 partially validated. Not every AI client is supported.
 
-## Try SkillLayer safely
+## Install with your AI coding agent
 
-Start with the disposable [SkillLayer tester sandbox](https://github.com/NickGBar/skilllayer-tester-sandbox), then copy the [one-prompt test](ONE_PROMPT_TEST.md). It demonstrates Safe Code Change, Release Readiness, and Resume Project Work without using production code or uncommitted work. Review the generated `results.md` yourself, then read the [$49 one-time Professional Beta offer](BETA_OFFER.md).
+Use the [one-prompt installation guide](INSTALL_WITH_AI.md) with Claude Code,
+Codex, Cursor, or another terminal-capable coding agent. It asks for approval
+before creating SkillLayer's isolated environment or changing MCP configuration,
+then verifies doctor and a real MCP handshake. It does not touch an existing
+repository unless you explicitly choose one.
 
-macOS is currently verified. The sandbox is the recommended first step.
+SkillLayer is available as **free early access**: no payment or account is
+required. macOS is currently verified.
+
+- **Safe Code Change** — inspect, plan, and validate a bounded code change.
+- **Release Readiness** — distinguish blockers, warnings, and incomplete checks.
+- **Resume Project Work** — recover saved context in a new agent session.
+
+After installation, optionally try the disposable [SkillLayer tester sandbox](https://github.com/NickGBar/skilllayer-tester-sandbox) with its separate [one-prompt test](ONE_PROMPT_TEST.md). It is the recommended place to learn the workflows before using a committed copy of a real repository. See [disable or remove](#disable-or-remove) when you are done.
 
 ## Install
 

@@ -9,4 +9,4 @@
 - [ ] Keep the final video between 60 and 120 seconds.
 - [ ] Add captions.
 - [ ] Review video metadata before publishing.
-- [ ] End with the sandbox CTA and $49 beta offer.
+- [ ] End with the one-prompt installation CTA and free early-access note.

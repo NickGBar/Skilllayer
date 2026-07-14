@@ -1,5 +1,9 @@
 # One-prompt SkillLayer sandbox trial
 
+This is an optional test after SkillLayer is installed. To install and
+configure SkillLayer without touching a user repository, start with
+[INSTALL_WITH_AI.md](INSTALL_WITH_AI.md).
+
 Copy the prompt below into Claude Code, Codex, or another capable coding agent
 with terminal access. It is intentionally sandbox-first. Before sharing any
 generated `results.md`, review it yourself.
@@ -73,5 +77,5 @@ show its local path, and do not upload it. State whether any file outside the
 trial directory was modified and whether any child process remains.
 ```
 
-The sandbox repository is intentionally separate from SkillLayer. It must be
-published at the stated URL before this prompt is sent to external testers.
+The sandbox repository is intentionally separate from SkillLayer. It is for a
+disposable trial, not a prerequisite for installation.
