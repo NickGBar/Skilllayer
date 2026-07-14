@@ -4,9 +4,10 @@ import json
 import subprocess
 import sys
 import time
-from importlib import metadata
 from pathlib import Path
 from typing import Any
+
+from .version import product_version
 
 
 OUTPUT_DIR = Path("runs/tester_check")
@@ -108,10 +109,7 @@ def check_tester_files() -> dict[str, Any]:
 
 
 def package_version() -> str:
-    try:
-        return metadata.version("skilllayer")
-    except metadata.PackageNotFoundError:
-        return "unknown"
+    return product_version()
 
 
 def run_cli_check(command: list[str]) -> dict[str, Any]:

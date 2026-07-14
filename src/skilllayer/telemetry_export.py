@@ -511,12 +511,9 @@ def default_export_path() -> Path:
 
 
 def skilllayer_version() -> str:
-    pyproject = Path("pyproject.toml")
-    if pyproject.exists():
-        match = re.search(r'^version\\s*=\\s*"([^"]+)"', pyproject.read_text(encoding="utf-8", errors="ignore"), re.M)
-        if match:
-            return match.group(1)
-    return "unknown"
+    from .version import product_version
+
+    return product_version()
 
 
 def new_sanitization_report() -> dict[str, int]:

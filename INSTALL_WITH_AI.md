@@ -59,8 +59,13 @@ At the end, report:
 - doctor status;
 - MCP configuration and real-handshake status;
 - discovered professional skills;
-- every file and configuration path changed;
-- whether any existing repository was modified (this must be no);
+- whether the product source checkout was created;
+- whether the isolated SkillLayer environment was created;
+- every project-scoped MCP configuration file created or changed (for example,
+  `.mcp.json`) and the approved SkillLayer entry it contains;
+- whether existing project source files were modified (this must be no);
+- whether global state was modified (this must be no);
+- whether unrelated repositories were accessed (this must be no);
 - rollback instructions: remove only mcpServers.skilllayer from the approved
   client config, then run ./scripts/uninstall.sh --remove-venv from the
   SkillLayer checkout or remove that dedicated checkout after reviewing it;

@@ -53,6 +53,7 @@ from .tester_check import run_tester_check
 from .tools import inspect_repo
 from .token_savings_benchmark import run_token_savings_benchmark
 from .workflow_repair import run_workflow_repair_report
+from .version import product_version
 from .runner.core import (
     build_release_readiness_artifacts,
     build_resume_work_artifacts,
@@ -80,6 +81,9 @@ COMMANDS = {
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv == ["--version"]:
+        print(product_version())
+        return 0
     if not argv or argv[0] not in COMMANDS:
         if "--repo" in argv and "--task" in argv:
             argv = ["run", *argv]
@@ -566,6 +570,11 @@ def handle_doctor(args: argparse.Namespace) -> int:
     pytest_available = is_pytest_available()
     mcp_available = module_available("mcp")
     required_checks: dict[str, Any] = {
+        "product_version": {
+            "value": product_version(),
+            "ok": product_version() != "unknown",
+            "required": True,
+        },
         "python_version": {
             "value": ".".join(str(part) for part in sys.version_info[:3]),
             "ok": sys.version_info >= (3, 10),

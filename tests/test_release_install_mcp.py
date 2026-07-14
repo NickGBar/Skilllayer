@@ -17,6 +17,7 @@ import tarfile
 import threading
 import venv
 import zipfile
+from importlib import metadata
 from pathlib import Path
 
 from skilllayer.mcp_config import build_config, validate_config
@@ -129,13 +130,14 @@ def _tool_payload(response: dict) -> dict:
     raise AssertionError(f"MCP tool response did not contain structured content: {response}")
 
 
-def _initialize(client: _StdioMcpClient, request_id: int) -> int:
+def _initialize(client: _StdioMcpClient, request_id: int, *, expected_version: str | None = None) -> int:
     initialized = client.request(
         request_id,
         "initialize",
         {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "release-test", "version": "1"}},
     )
     assert initialized["result"]["serverInfo"]["name"] == "SkillLayer"
+    assert initialized["result"]["serverInfo"]["version"] == (expected_version or metadata.version("skilllayer"))
     client.notify("notifications/initialized")
     return request_id + 1
 
@@ -194,7 +196,10 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     ).strip()
     assert "site-packages/skilllayer" in import_path
     assert str(ROOT) not in import_path
-    subprocess.run([str(python), "-m", "skilllayer", "doctor", "--json"], cwd=outside, check=True, capture_output=True, text=True)
+    installed_version = subprocess.check_output([str(python), "-c", "from importlib.metadata import version; print(version('skilllayer'))"], cwd=outside, text=True).strip()
+    assert subprocess.check_output([str(python), "-m", "skilllayer", "--version"], cwd=outside, text=True).strip() == installed_version
+    doctor = json.loads(subprocess.check_output([str(python), "-m", "skilllayer", "doctor", "--json"], cwd=outside, text=True))
+    assert doctor["required_checks"]["product_version"]["value"] == installed_version
     subprocess.run([str(python), "-m", "skilllayer", "workflows", "--json"], cwd=outside, check=True, capture_output=True, text=True)
 
     runtime_site_packages = subprocess.check_output(
@@ -207,7 +212,7 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     )
     saved_paths: list[str] = []
     try:
-        request_id = _initialize(client, 1)
+        request_id = _initialize(client, 1, expected_version=installed_version)
         tools = client.request(request_id, "tools/list", {})["result"]["tools"]
         request_id += 1
         names = {tool["name"] for tool in tools}
@@ -251,7 +256,7 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
         extra_env={"PYTHONPATH": runtime_site_packages},
     )
     try:
-        request_id = _initialize(restarted, 20)
+        request_id = _initialize(restarted, 20, expected_version=installed_version)
         rehydrated = _tool_payload(restarted.request(request_id, "tools/call", {
             "name": "skilllayer_rehydrate_context",
             "arguments": {"repo_path": str(fixture), "full_context": True},
