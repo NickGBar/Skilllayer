@@ -24,6 +24,12 @@ repository; Windows installer logic is checked statically, not executed here.
 MCP integration is verified end-to-end with Claude Code and Codex; Cursor is
 partially validated. Not every AI client is supported.
 
+## Try SkillLayer safely
+
+Start with the disposable [SkillLayer tester sandbox](https://github.com/NickGBar/skilllayer-tester-sandbox), then copy the [one-prompt test](ONE_PROMPT_TEST.md). It demonstrates Safe Code Change, Release Readiness, and Resume Project Work without using production code or uncommitted work. Review the generated `results.md` yourself, then read the [$49 one-time Professional Beta offer](BETA_OFFER.md).
+
+macOS is currently verified. The sandbox is the recommended first step.
+
 ## Install
 
 From a checkout:
@@ -134,14 +140,6 @@ MCP. You ask it to inspect a repository or search for `greet`; the result is
 structured JSON rather than model-generated shell steps. Later, if you choose
 to save context, SkillLayer reports the exact `.skilllayer/` paths written, and
 you can rehydrate that context in a later session.
-
-## Try the safe sandbox
-
-Use the [one-prompt sandbox trial](ONE_PROMPT_TEST.md) before trying SkillLayer
-on a committed copy of a real repository. The sandbox is disposable, records a
-sanitized `results.md`, and demonstrates explicit environment-remediation
-consent. See the [Professional Beta offer](BETA_OFFER.md) and the static
-[landing page](site/index.html) for the $49 one-time early-beta terms.
 
 ## Advanced: low-level tools
 

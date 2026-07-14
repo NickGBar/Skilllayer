@@ -14,12 +14,6 @@ body:
     id: macos
     attributes: { label: macOS version, placeholder: "Example: macOS 15" }
     validations: { required: true }
-  - type: dropdown
-    id: python-experience
-    attributes:
-      label: Python experience
-      options: [New to Python environments, Comfortable with virtual environments, Advanced]
-    validations: { required: true }
   - type: textarea
     id: intended-use
     attributes: { label: Intended use, description: "Describe the kind of work without source code or private details." }
@@ -31,5 +25,12 @@ body:
       options:
         - label: I am willing to test the disposable sandbox first.
           required: true
+        - label: I completed the sandbox test or understand that it is recommended first.
+          required: true
+        - label: I would consider the $49 one-time beta.
+          required: false
         - label: I consent to receive beta instructions through GitHub.
           required: true
+  - type: textarea
+    id: sanitized-feedback
+    attributes: { label: Optional sanitized feedback, description: "Do not include source code, credentials, private paths, or MCP configuration." }

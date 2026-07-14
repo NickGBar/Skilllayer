@@ -17,4 +17,5 @@ h2 { margin-top: 0; }
 .outcomes article { padding: 26px; background: #fff; border-radius: 16px; box-shadow: 0 10px 30px #1f2a4420; }
 .safety li { margin: 8px 0; }
 .beta { border: 2px solid #3654a6; }
+.demo video { display: block; width: 100%; max-width: 880px; margin: 16px auto; border-radius: 12px; background: #19244a; }
 @media (max-width: 720px) { .hero { padding: 40px 26px; } .outcomes { grid-template-columns: 1fr; } section { padding: 28px; } }
