@@ -144,6 +144,10 @@ you explicitly enabled them, can be removed separately.
 use `--remove-venv`, `--remove-project-state`, or `--remove-user-data` only for
 the data you intend to remove. They never remove project memory by default.
 
+## Operational help
+
+Use `skilllayer doctor --json` for installation readiness and `skilllayer diagnostics --json` for a local, sanitized support report. See [DIAGNOSTICS.md](DIAGNOSTICS.md), [CHANGELOG.md](CHANGELOG.md), [installation](INSTALL_WITH_AI.md), and [disable or remove](#disable-or-remove). Known platform and safety limits are documented in the changelog.
+
 ## What this feels like
 
 After installation, Claude Code discovers the local SkillLayer tools through

@@ -178,7 +178,7 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     environment = tmp_path / "venv"
     venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
     python = _venv_python(environment)
-    subprocess.run([str(python), "-m", "pip", "install", "--no-deps", str(wheel)], check=True, capture_output=True, text=True)
+    subprocess.run([str(python), "-m", "pip", "install", "--force-reinstall", "--no-deps", str(wheel)], check=True, capture_output=True, text=True)
 
     fixture = tmp_path / "fixture"
     fixture.mkdir()
@@ -202,13 +202,22 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     assert doctor["required_checks"]["product_version"]["value"] == installed_version
     subprocess.run([str(python), "-m", "skilllayer", "workflows", "--json"], cwd=outside, check=True, capture_output=True, text=True)
 
-    runtime_site_packages = subprocess.check_output(
+    # Make MCP's already-declared runtime dependencies available to the child
+    # without putting the test runner's older SkillLayer distribution ahead of
+    # the wheel under test on PYTHONPATH.
+    runtime_site_packages = Path(subprocess.check_output(
         [sys.executable, "-c", "import site; print(site.getsitepackages()[0])"], text=True
-    ).strip()
+    ).strip())
+    dependency_site = tmp_path / "runtime-dependencies"
+    dependency_site.mkdir()
+    for item in runtime_site_packages.iterdir():
+        if not item.name.startswith("skilllayer"):
+            (dependency_site / item.name).symlink_to(item)
+
     client = _StdioMcpClient(
         [str(python), "-m", "skilllayer.mcp_server"],
         outside,
-        extra_env={"PYTHONPATH": runtime_site_packages},
+        extra_env={"PYTHONPATH": str(dependency_site)},
     )
     saved_paths: list[str] = []
     try:
@@ -253,7 +262,7 @@ def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> Non
     restarted = _StdioMcpClient(
         [str(python), "-m", "skilllayer.mcp_server"],
         outside,
-        extra_env={"PYTHONPATH": runtime_site_packages},
+        extra_env={"PYTHONPATH": str(dependency_site)},
     )
     try:
         request_id = _initialize(restarted, 20, expected_version=installed_version)

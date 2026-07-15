@@ -20,7 +20,7 @@ from setuptools.command.sdist import sdist as _sdist
 REQUIRED_RUNTIME_MODULES = frozenset({
     "__init__", "__main__", "claude_code_pricing", "cli", "cost_tracking",
     "demand_tracking", "mcp_config", "mcp_server", "security", "session_usage",
-    "telemetry", "version",
+    "telemetry", "version", "diagnostics", "sanitization",
 })
 
 # Reachable only through documented maintainer/report commands. They are public

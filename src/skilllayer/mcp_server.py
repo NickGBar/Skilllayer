@@ -1829,7 +1829,9 @@ def create_mcp_server() -> Any:
     # FastMCP otherwise advertises its own package version in serverInfo.
     # SkillLayer's installed distribution metadata is the public product source.
     from .version import product_version
-    server._mcp_server.version = product_version()
+    low_level_server = getattr(server, "_mcp_server", None)
+    if low_level_server is not None:
+        low_level_server.version = product_version()
     # skilllayer_measure_memory / skilllayer_profile_execution: intentionally NOT
     # registered. Disabled over MCP pending an execution-safety fix — see
     # MCP_DISABLED_WORKFLOWS. The functions remain in source (unregistered) for

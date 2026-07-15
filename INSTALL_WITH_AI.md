@@ -36,6 +36,8 @@ user-approved dedicated SkillLayer directory:
    SkillLayer checkout and uses no sudo or global installation.
 3. Run ./scripts/verify_install.sh and .venv/bin/python -m skilllayer doctor
    --json.
+   Also run .venv/bin/python -m skilllayer --version and, if useful, generate
+   local-only diagnostics with .venv/bin/python -m skilllayer diagnostics.
 4. Generate a separate MCP config with
    .venv/bin/skilllayer mcp-config --output skilllayer-mcp.json, then validate
    it with .venv/bin/skilllayer mcp-config-check skilllayer-mcp.json --json.

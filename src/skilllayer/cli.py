@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from .cost_tracking import USAGE_EVENTS_JSONL, aggregate_usage
 from .cost_optimization import run_cost_optimization_report
 from .cursor_mcp_validation import run_cursor_mcp_validation
 from .demand_tracking import DEMAND_EVENTS_JSONL, build_demand_report
+from .diagnostics import build_diagnostics
 from .failure_analysis import analyze_failures
 from .feedback_registry import ALLOWED_PLATFORMS, ALLOWED_STATUSES, build_feedback_report
 from .generalization import run_generalization_validation
@@ -67,6 +69,7 @@ COMMANDS = {
     "workflows",
     "skills",
     "doctor",
+    "diagnostics",
     "mcp-config",
     "mcp-config-check",
     "safe-change", "release-readiness", "resume-work",
@@ -163,6 +166,13 @@ def build_parser() -> argparse.ArgumentParser:
     doctor_parser.add_argument("--log-dir", type=Path, default=None, help="Optional log directory to check.")
     doctor_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     doctor_parser.set_defaults(handler=handle_doctor)
+
+    diagnostics_parser = subparsers.add_parser("diagnostics", help="Generate a local sanitized diagnostics report.")
+    diagnostics_parser.add_argument("--repo", default=None, help="Optional project path; only this project's MCP config is inspected.")
+    diagnostics_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    diagnostics_parser.add_argument("--output", type=Path, default=None, help="Write the report locally; refuses existing paths by default.")
+    diagnostics_parser.add_argument("--force", action="store_true", help="Explicitly allow replacing --output.")
+    diagnostics_parser.set_defaults(handler=handle_diagnostics)
 
     safe_change_parser = subparsers.add_parser("safe-change", help="Plan and validate a code change safely (host agent performs the edit).")
     safe_change_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
@@ -638,24 +648,79 @@ def handle_doctor(args: argparse.Namespace) -> int:
             "warnings": warnings,
         }
     )
+    details = []
+    for check_id, check in checks.items():
+        required = bool(check.get("required"))
+        ok = bool(check.get("ok"))
+        status = "PASS" if ok else ("BLOCKED" if required else "INCOMPLETE")
+        observed = check.get("value")
+        warning = check.get("warning") or check.get("error")
+        details.append({
+            "id": check_id,
+            "title": check_id.replace("_", " "),
+            "status": status,
+            "observed": observed,
+            "impact": None if ok else ("Required installation condition is unavailable." if required else "This optional capability was not confirmed."),
+            "usable": ok or not required,
+            "next_action": warning,
+            "remediation": warning,
+            "mutates_environment": False,
+            "requires_user_confirmation": False,
+            "evidence": {"required": required, "ok": ok},
+            "error_code": None if ok else check_id,
+        })
+    result["check_details"] = details
+    result["overall_status"] = "PASS" if result["ok"] else "BLOCKED"
+    result["recommended_next_action"] = next((item["next_action"] for item in details if item["next_action"]), None)
     if args.json:
         print(json.dumps(result, indent=2))
     else:
-        print("SkillLayer doctor")
-        print("  required checks:")
-        for name, check in required_checks.items():
-            status = "ok" if check["ok"] else "fail"
-            print(f"  {name}: {status} ({check.get('value')})")
-        print("  optional checks:")
-        for name, check in optional_checks.items():
-            status = "ok" if check["ok"] else "warning"
-            print(f"  {name}: {status} ({check.get('value')})")
-        if warnings:
-            print("  warnings:")
-            for warning in warnings:
-                print(f"    {warning}")
-        print(f"  validation: {format_validation_status(str(result['validation_status']))}")
+        print(f"SkillLayer doctor: {result['overall_status']}")
+        for item in details:
+            if item["status"] != "PASS":
+                print(f"  {item['status']}: {item['title']} — {item['observed']}")
+                if item["next_action"]:
+                    print(f"    next action: {item['next_action']}")
+        print(f"  evidence: {sum(item['status'] == 'PASS' for item in details)}/{len(details)} checks passed")
     return 0 if result["ok"] else 1
+
+
+def handle_diagnostics(args: argparse.Namespace) -> int:
+    doctor_args = argparse.Namespace(repo=args.repo, config=None, log_dir=None, json=True)
+    # Build doctor data without printing it to the diagnostics stream.
+    from contextlib import redirect_stdout
+    import io
+    sink = io.StringIO()
+    with redirect_stdout(sink):
+        handle_doctor(doctor_args)
+    doctor = json.loads(sink.getvalue())
+    try:
+        tool_count = _mcp_tool_count()
+    except Exception:
+        tool_count = None
+    result = build_diagnostics(args.repo, doctor, tool_count=tool_count)
+    text = json.dumps(result, indent=2) + "\n"
+    if args.output:
+        destination = args.output.expanduser().resolve()
+        if destination.exists() and not args.force:
+            print(f"diagnostics output exists: {destination}; use --force to replace it", file=sys.stderr)
+            return 2
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=destination.parent, delete=False) as handle:
+            handle.write(text)
+            temporary = Path(handle.name)
+        os.replace(temporary, destination)
+        print(f"Diagnostics written locally: {destination}")
+        print("Review this report before sharing. It is generated locally and is not uploaded automatically.")
+        return 0
+    if args.json:
+        print(text, end="")
+    else:
+        print(f"SkillLayer diagnostics: {result['product_version']}")
+        print(f"  doctor: {result['doctor_summary']['overall_status']}")
+        print(f"  MCP tools: {result['mcp_tool_count']}")
+        print("  Review this report before sharing. It is generated locally and is not uploaded automatically.")
+    return 0
 
 
 def _mcp_tool_count() -> int:
