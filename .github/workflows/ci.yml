@@ -1,0 +1,54 @@
+name: Cross-platform checks
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-focused:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: "3.10"
+          - os: ubuntu-22.04
+            python: "3.11"
+          - os: ubuntu-24.04
+            python: "3.12"
+          - os: ubuntu-24.04
+            python: "3.13"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install and focused checks
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[mcp,dev]"
+          bash -n scripts/install.sh scripts/uninstall.sh
+          python -m skilllayer --version
+          python -m skilllayer doctor --json
+          python -m skilllayer diagnostics --json
+          python -m skilllayer update-check --json
+          python -m pytest tests/test_target_environment_execution.py tests/test_environment_remediation.py tests/test_diagnostics.py tests/test_subprocess_lifecycle_safety.py -q -p no:cacheprovider
+
+  ubuntu-full-suite:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[mcp,dev]"
+      - name: Full suite
+        run: python -u -m pytest tests/ -q -p no:cacheprovider
