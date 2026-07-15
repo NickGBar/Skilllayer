@@ -5,7 +5,7 @@ import json
 import re
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from .version import product_version
@@ -37,7 +37,7 @@ def check_for_update(*, timeout: float = 3.0, latest_url: str = RELEASES_URL, in
         "recommended_update_command": update_command(installation_type),
         "installation_type": installation_type,
         "mutated_environment": False,
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "error_code": None,
     }
     try:

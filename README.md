@@ -146,7 +146,7 @@ the data you intend to remove. They never remove project memory by default.
 
 ## Operational help
 
-Use `skilllayer doctor --json` for installation readiness, `skilllayer diagnostics --json` for a local sanitized support report, and `skilllayer update-check --json` for a read-only public release lookup. See [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md), [UPDATE.md](UPDATE.md), [DIAGNOSTICS.md](DIAGNOSTICS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [SUPPORT.md](SUPPORT.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [Claude Code integration](docs/integrations/claude-code.md), [Codex integration](docs/integrations/codex.md), [CHANGELOG.md](CHANGELOG.md), and [disable or remove](#disable-or-remove).
+Use `skilllayer doctor --json` for installation readiness, `skilllayer diagnostics --json` for a local sanitized support report, and `skilllayer update-check --json` for a read-only public release lookup. See [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md), [UPDATE.md](UPDATE.md), [POLICY.md](POLICY.md), [DIAGNOSTICS.md](DIAGNOSTICS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [SUPPORT.md](SUPPORT.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [Claude Code integration](docs/integrations/claude-code.md), [Codex integration](docs/integrations/codex.md), [CHANGELOG.md](CHANGELOG.md), and [disable or remove](#disable-or-remove).
 
 ## What this feels like
 

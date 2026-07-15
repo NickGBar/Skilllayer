@@ -26,6 +26,9 @@ jobs:
           python scripts/check_tag_version.py "${GITHUB_REF_NAME}"
           python -m pip install --upgrade pip build
           python -m pip install -e ".[mcp,dev]"
+          python -m skilllayer policy check --json
+          python -m skilllayer policy dry-run safe-change --json
+          python -m skilllayer policy dry-run release-readiness --json
       - name: Run full suite
         run: python -u -m pytest tests/ -q -p no:cacheprovider
       - name: Build artifacts

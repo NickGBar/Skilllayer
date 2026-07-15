@@ -37,7 +37,7 @@ jobs:
           python -m skilllayer doctor --json
           python -m skilllayer diagnostics --json
           python -m skilllayer update-check --json
-          python -m pytest tests/test_target_environment_execution.py tests/test_environment_remediation.py tests/test_diagnostics.py tests/test_subprocess_lifecycle_safety.py -q -p no:cacheprovider
+          python -m pytest tests/test_policy.py tests/test_target_environment_execution.py tests/test_environment_remediation.py tests/test_diagnostics.py tests/test_safe_code_change_workflow.py tests/test_release_readiness_workflow.py tests/test_subprocess_lifecycle_safety.py -q -p no:cacheprovider
 
   ubuntu-full-suite:
     runs-on: ubuntu-24.04

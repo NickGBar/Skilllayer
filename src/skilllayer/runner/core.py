@@ -18,6 +18,7 @@ from ..cost_tracking import USAGE_EVENTS_JSONL, event_from_llm_client, record_us
 from ..demand_tracking import DEMAND_EVENTS_JSONL, record_demand_event
 from ..llm import LLMClient
 from ..memory import SkillMemory
+from ..policy import load_policy
 from ..router import SkillRouter
 from ..security import InternalWorkflowBlockedError, WorkflowAccessPolicy
 from ..telemetry import automatic_telemetry_enabled
@@ -7720,6 +7721,7 @@ def build_safe_change_artifacts(
     phase: str = "plan",
     test_command: list[str] | None = None,
     save_context: bool = False,
+    acknowledge_dirty: bool = False,
 ) -> dict[str, Any]:
     """Orchestrate SkillLayer's own inspection/search/test capabilities into a
     two-phase safe-change workflow. SkillLayer never edits source files here —
@@ -7741,6 +7743,19 @@ def build_safe_change_artifacts(
 
     from ..tools.inspect import inspect_repo
     repo_info = inspect_repo(repo)
+    policy_result = load_policy(repo)
+    policy_status = policy_result.get("status")
+    if policy_status in {"POLICY_INVALID", "POLICY_UNSUPPORTED_VERSION", "POLICY_CONFLICT", "POLICY_UNSAFE_PATH"}:
+        return {
+            "schema_version": 1, "skill": "safe_code_change", "success": False, "phase": phase,
+            "policy": policy_result, "checks": [], "approvals": [], "blockers": policy_result.get("errors", []),
+            "warnings": [], "evidence": {}, "error_code": policy_status, "summary": "Repository policy prevented safe-change evaluation.",
+            "repository_state": None, "uncommitted_work_present": None, "relevant_files": [], "relevant_symbols": [],
+            "proposed_plan": None, "executed_by": "host_agent", "changed_files": [], "tests_run": False,
+            "tests_passed": None, "tests_failed": None, "validation_complete": False, "test_environment": None,
+            "selected_python": None, "tests_started": False, "environment_blocker": None, "remediation": None,
+            "risks": [], "next_action": "Fix the policy, then rerun the workflow.", "written_paths": [], "verdict": "POLICY_INVALID",
+        }
     git_artifacts, _ = build_git_status_artifacts(repo, [])
     is_git_repo = bool(git_artifacts.get("is_git_repo"))
     repository_state = {
@@ -7763,10 +7778,19 @@ def build_safe_change_artifacts(
             "environment_blocker": None, "remediation": None,
             "risks": ["Not a git repository — changes cannot be tracked or diffed."],
             "warnings": [], "next_action": "Initialize git before requesting a safe change.",
+            "policy": policy_result, "checks": [], "approvals": [], "blockers": ["repository_state"], "evidence": repository_state,
+            "schema_version": 1, "summary": "Repository state is not suitable for tracked safe change.", "error_code": "not_a_git_repository",
             "written_paths": [], "verdict": "BLOCKED_BY_REPOSITORY_STATE",
         }
 
     uncommitted_work_present = not bool(git_artifacts.get("clean", True))
+    policy_approval_required = bool(
+        policy_status == "POLICY_VALID"
+        and policy_result["normalized_policy"]["safe_change"].get("require_clean_or_acknowledged_worktree")
+        and uncommitted_work_present
+        and not acknowledge_dirty
+        and phase == "plan"
+    )
     risks: list[str] = []
     warnings: list[str] = []
     if uncommitted_work_present and phase == "plan":
@@ -7795,7 +7819,8 @@ def build_safe_change_artifacts(
 
     if phase == "plan":
         proposed_plan = _build_safe_change_plan(task, relevant_files, repo_info)
-        return {
+        plan_result = {
+            "schema_version": 1,
             "skill": "safe_code_change", "success": True, "phase": "plan",
             "repository_state": repository_state, "uncommitted_work_present": uncommitted_work_present,
             "relevant_files": relevant_files, "relevant_symbols": relevant_symbols,
@@ -7805,8 +7830,17 @@ def build_safe_change_artifacts(
             "test_environment": None, "selected_python": None, "tests_started": False,
             "environment_blocker": None, "remediation": None,
             "next_action": "Ask the host agent to implement the plan, then call again with phase='validate'.",
-            "written_paths": [], "verdict": "READY_TO_IMPLEMENT",
+            "policy": policy_result, "checks": ["worktree_acknowledgement"],
+            "approvals": ["dirty_worktree"] if policy_approval_required else [],
+            "blockers": ["dirty_worktree"] if policy_approval_required else [],
+            "evidence": {"policy_status": policy_status, "dirty_worktree": uncommitted_work_present},
+            "summary": "Safe-change plan prepared with repository policy evidence.", "error_code": "policy_approval_required" if policy_approval_required else None,
+            "written_paths": [], "verdict": "POLICY_WOULD_REQUIRE_APPROVAL" if policy_approval_required else "READY_TO_IMPLEMENT",
         }
+        if policy_approval_required:
+            plan_result["success"] = False
+            plan_result["next_action"] = "Acknowledge the existing worktree changes explicitly, then rerun the plan."
+        return plan_result
 
     # phase == "validate": inspect the diff the host agent produced and run tests.
     changed_files = [f["path"] for f in git_artifacts.get("changed_files", []) or []]
@@ -7858,6 +7892,7 @@ def build_safe_change_artifacts(
         save_artifacts = build_save_context_artifacts(repo, state, [])
         written_paths = list(save_artifacts.get("written_paths", []) or [])
 
+    policy_requires_validation = bool(policy_status == "POLICY_VALID" and policy_result["normalized_policy"]["safe_change"].get("require_validation"))
     if not changed_files:
         verdict, success = "CHANGE_INCOMPLETE", False
         next_action = "No changed files were detected yet. Make the change, then call again with phase='validate'."
@@ -7871,6 +7906,9 @@ def build_safe_change_artifacts(
     elif tests_run and not tests_passed:
         verdict, success = "VALIDATION_FAILED", False
         next_action = "Fix the failing tests, then call again with phase='validate'."
+    elif policy_requires_validation and not tests_run:
+        verdict, success = "CHANGE_INCOMPLETE", False
+        next_action = "Run the required validation, then call again with phase='validate'."
     elif not tests_run or risks:
         verdict, success = "CHANGE_VALIDATED_WITH_WARNINGS", True
         next_action = "Review the flagged warnings/risks before committing."
@@ -7879,7 +7917,7 @@ def build_safe_change_artifacts(
         next_action = "Ready to commit."
 
     return {
-        "skill": "safe_code_change", "success": success, "phase": "validate",
+        "schema_version": 1, "skill": "safe_code_change", "success": success, "phase": "validate",
         "repository_state": repository_state, "uncommitted_work_present": uncommitted_work_present,
         "relevant_files": relevant_files, "relevant_symbols": relevant_symbols,
         "proposed_plan": None, "executed_by": "host_agent",
@@ -7889,6 +7927,11 @@ def build_safe_change_artifacts(
         "tests_started": tests_started, "environment_blocker": environment_blocker,
         "remediation": remediation,
         "risks": risks, "warnings": warnings, "next_action": next_action,
+        "policy": policy_result, "checks": ["validation"] if tests_run else [],
+        "approvals": ["dirty_worktree"] if acknowledge_dirty else [],
+        "blockers": [environment_blocker] if environment_blocker else [],
+        "evidence": {"tests_run": tests_run, "tests_started": tests_started, "validation_complete": tests_run and not bool(environment_blocker)},
+        "summary": "Safe-change validation completed with policy-aware evidence.", "error_code": "validation_incomplete" if verdict == "CHANGE_INCOMPLETE" else None,
         "written_paths": written_paths, "verdict": verdict,
     }
 
@@ -7899,6 +7942,15 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
     incomplete check always reduces confidence rather than becoming success.
     Bounded by default (deep=False: detects the test command without running
     the suite); pass deep=True to actually execute it via TestRunner."""
+    policy_result = load_policy(repo)
+    if policy_result["status"] in {"POLICY_INVALID", "POLICY_UNSUPPORTED_VERSION", "POLICY_CONFLICT", "POLICY_UNSAFE_PATH"}:
+        return {
+            "schema_version": 1, "skill": "release_readiness", "success": False, "checks_requested": [],
+            "checks_completed": [], "checks_incomplete": [], "findings": [], "blockers": policy_result.get("errors", []),
+            "warnings": [], "policy": policy_result, "checks": [], "approvals": [], "evidence": {},
+            "verdict": "BLOCKED_BY_POLICY", "error_code": policy_result["status"],
+            "summary": "Repository policy prevented release-readiness evaluation.",
+        }
     checks_requested = [
         "repository_inspection", "git_status", "secret_scan", "dependency_inspection",
         "memory_integrity", "packaging_metadata", "hidden_write_self_check", "test_status",
@@ -7976,10 +8028,19 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
     package_status: dict[str, Any] = {"pyproject_toml": pyproject.exists(), "setup_py": setup_py.exists()}
     if pyproject.exists():
         try:
-            import tomllib
-            with pyproject.open("rb") as fh:
-                tomllib.load(fh)
-            package_status["pyproject_parses"] = True
+            try:
+                import tomllib
+            except ImportError:
+                # Python 3.10 has no stdlib tomllib. Keep this check bounded:
+                # dependency inspection already has a conservative regex
+                # fallback, so valid-looking TOML is not falsely blocked.
+                text = pyproject.read_text(encoding="utf-8")
+                package_status["pyproject_parses"] = bool(text.strip())
+                package_status["parser"] = "bounded_text_fallback"
+            else:
+                with pyproject.open("rb") as fh:
+                    tomllib.load(fh)
+                package_status["pyproject_parses"] = True
         except Exception as exc:
             package_status["pyproject_parses"] = False
             blockers.append(f"pyproject.toml does not parse: {exc}")
@@ -8044,9 +8105,17 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
         "consistency was not checked."
     )
 
+    policy = policy_result.get("normalized_policy")
+    policy_requires_tests = bool(policy and policy.get("release", {}).get("require_tests"))
+    policy_disallows_incomplete = bool(policy and not policy.get("release", {}).get("allow_incomplete"))
+    if policy_requires_tests and not deep:
+        checks_incomplete.append({"check": "test_status", "reason": "repository policy requires tests; bounded mode did not execute them"})
+        test_environment_incomplete = True
     if blockers:
         verdict = "NOT_READY"
     elif test_environment_incomplete or secret_scan_status == "incomplete" or hidden_write_detected:
+        verdict = "INCOMPLETE_ASSESSMENT"
+    elif checks_incomplete and policy_disallows_incomplete:
         verdict = "INCOMPLETE_ASSESSMENT"
     elif checks_incomplete:
         verdict = "READY_WITH_KNOWN_LIMITATIONS"
@@ -8054,7 +8123,7 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
         verdict = "READY_FOR_CAREFUL_TESTERS"
 
     return {
-        "skill": "release_readiness",
+        "schema_version": 1, "skill": "release_readiness",
         "success": True,
         "checks_requested": checks_requested,
         "checks_completed": checks_completed,
@@ -8070,6 +8139,11 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
         "dependency_status": dependency_status,
         "platform_limitations": platform_limitations,
         "written_paths": [],
+        "policy": policy_result,
+        "checks": [{"name": name, "completed": name in checks_completed} for name in checks_requested],
+        "approvals": [], "blockers": blockers, "evidence": {"deep": deep, "checks_completed": checks_completed},
+        "summary": "Release-readiness assessment completed with policy-aware evidence.",
+        "error_code": "incomplete_assessment" if verdict == "INCOMPLETE_ASSESSMENT" else None,
         "verdict": verdict,
     }
 

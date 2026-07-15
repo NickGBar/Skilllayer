@@ -25,6 +25,7 @@ from .cursor_mcp_validation import run_cursor_mcp_validation
 from .demand_tracking import DEMAND_EVENTS_JSONL, build_demand_report
 from .diagnostics import build_diagnostics
 from .operations import apply_uninstall_plan, build_uninstall_plan, detect_installation_type
+from .policy import load_policy, policy_dry_run
 from .update_check import check_for_update
 from .failure_analysis import analyze_failures
 from .feedback_registry import ALLOWED_PLATFORMS, ALLOWED_STATUSES, build_feedback_report
@@ -74,6 +75,7 @@ COMMANDS = {
     "diagnostics",
     "update-check",
     "uninstall",
+    "policy",
     "mcp-config",
     "mcp-config-check",
     "safe-change", "release-readiness", "resume-work",
@@ -192,23 +194,43 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     uninstall_parser.set_defaults(handler=handle_uninstall)
 
+    policy_parser = subparsers.add_parser("policy", help="Inspect the local declarative repository policy.")
+    policy_sub = policy_parser.add_subparsers(dest="policy_command")
+    policy_check = policy_sub.add_parser("check", help="Validate policy without changing files.")
+    policy_check.add_argument("--repo", default=None)
+    policy_check.add_argument("--json", action="store_true")
+    policy_check.set_defaults(handler=handle_policy_check)
+    policy_explain = policy_sub.add_parser("explain", help="Explain effective policy rules.")
+    policy_explain.add_argument("--repo", default=None)
+    policy_explain.add_argument("--json", action="store_true")
+    policy_explain.set_defaults(handler=handle_policy_explain)
+    policy_dry = policy_sub.add_parser("dry-run", help="Show policy outcome without executing a workflow.")
+    policy_dry.add_argument("workflow", choices=["safe-change", "release-readiness"])
+    policy_dry.add_argument("--repo", default=None)
+    policy_dry.add_argument("--json", action="store_true")
+    policy_dry.set_defaults(handler=handle_policy_dry_run)
+
     safe_change_parser = subparsers.add_parser("safe-change", help="Plan and validate a code change safely (host agent performs the edit).")
     safe_change_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
     safe_change_parser.add_argument("--task", required=True, help="Description of the change to make.")
     safe_change_parser.add_argument("--phase", choices=["plan", "validate"], default="plan", help="plan (default) or validate.")
     safe_change_parser.add_argument("--save-context", action="store_true", help="On phase=validate, persist a summary snapshot under .skilllayer/.")
+    safe_change_parser.add_argument("--acknowledge-dirty", action="store_true", help="Acknowledge existing worktree changes when repository policy requires it.")
     safe_change_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    safe_change_parser.add_argument("--compact", action="store_true", help="Show concise human output (JSON is unchanged).")
     safe_change_parser.set_defaults(handler=handle_safe_change)
 
     release_readiness_parser = subparsers.add_parser("release-readiness", help="Assess whether a repository is ready for careful external release.")
     release_readiness_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
     release_readiness_parser.add_argument("--deep", action="store_true", help="Also execute the repository's own test suite (bounded by default).")
     release_readiness_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    release_readiness_parser.add_argument("--compact", action="store_true", help="Show concise human output (JSON is unchanged).")
     release_readiness_parser.set_defaults(handler=handle_release_readiness)
 
     resume_work_parser = subparsers.add_parser("resume-work", help="Reconstruct project state for a new session from saved memory alone.")
     resume_work_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
     resume_work_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    resume_work_parser.add_argument("--compact", action="store_true", help="Show concise human output (JSON is unchanged).")
     resume_work_parser.set_defaults(handler=handle_resume_work)
 
     mcp_config_parser = subparsers.add_parser("mcp-config", help="Generate the installed SkillLayer stdio MCP config.")
@@ -408,6 +430,12 @@ def handle_run(args: argparse.Namespace) -> int:
     result.update(extract_optional_run_fields(raw_result))
     if args.json:
         print(json.dumps(result, indent=2))
+    elif args.compact:
+        print(f"Verdict: {result['verdict']}")
+        print(f"What happened: phase={result['phase']}; changed_files={len(result.get('changed_files', []))}; tests_run={result.get('tests_run')}")
+        if result.get("blockers") or result.get("warnings"):
+            print(f"Blocked or incomplete: {result.get('blockers') or result.get('warnings')}")
+        print(f"Next action: {result['next_action']}")
     else:
         print_human_run(result, verbose=args.verbose)
     record_tool_invocation_best_effort(
@@ -428,6 +456,12 @@ def handle_inspect(args: argparse.Namespace) -> int:
     result = with_not_applicable_validation(inspect_repo(args.repo))
     if args.json:
         print(json.dumps(result, indent=2))
+    elif args.compact:
+        print(f"Verdict: {result['verdict']}")
+        print(f"What happened: completed={len(result['checks_completed'])}; incomplete={len(result['checks_incomplete'])}")
+        if result["blockers"] or result["checks_incomplete"]:
+            print(f"Blocked or incomplete: {result['blockers'] or result['checks_incomplete']}")
+        print("Next action: review the evidence and resolve any incomplete checks before release.")
     else:
         print("SkillLayer repository inspection")
         print(f"  repo_path: {result['repo_path']}")
@@ -471,10 +505,16 @@ def handle_safe_change(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     repo = _resolve_repo_arg(args.repo)
     result = build_safe_change_artifacts(
-        repo, args.task, phase=args.phase, save_context=bool(args.save_context),
+        repo, args.task, phase=args.phase, save_context=bool(args.save_context), acknowledge_dirty=bool(args.acknowledge_dirty),
     )
     if args.json:
         print(json.dumps(result, indent=2))
+    elif args.compact:
+        print(f"Verdict: {result['verdict']}")
+        print(f"What happened: phase={result['phase']}; changed_files={len(result.get('changed_files', []))}; tests_run={result.get('tests_run')}")
+        if result.get("blockers") or result.get("warnings"):
+            print(f"Blocked or incomplete: {result.get('blockers') or result.get('warnings')}")
+        print(f"Next action: {result['next_action']}")
     else:
         print(f"Safe code change — phase={result['phase']} verdict={result['verdict']}")
         print(f"  repository_state: {result['repository_state']}")
@@ -505,6 +545,12 @@ def handle_release_readiness(args: argparse.Namespace) -> int:
     result = build_release_readiness_artifacts(repo, deep=bool(args.deep))
     if args.json:
         print(json.dumps(result, indent=2))
+    elif args.compact:
+        print(f"Verdict: {result['verdict']}")
+        print(f"What happened: completed={len(result['checks_completed'])}; incomplete={len(result['checks_incomplete'])}")
+        if result["blockers"] or result["checks_incomplete"]:
+            print(f"Blocked or incomplete: {result['blockers'] or result['checks_incomplete']}")
+        print("Next action: review the evidence and resolve any incomplete checks before release.")
     else:
         print(f"Release readiness — verdict={result['verdict']}")
         print(f"  checks_completed: {', '.join(result['checks_completed'])}")
@@ -529,6 +575,12 @@ def handle_resume_work(args: argparse.Namespace) -> int:
     result = build_resume_work_artifacts(repo)
     if args.json:
         print(json.dumps(result, indent=2))
+    elif args.compact:
+        print(f"Verdict: {result['verdict']}")
+        print(f"What happened: memory_status={result['memory_health']['status']}")
+        if result["uncertainty"]:
+            print(f"Blocked or incomplete: {result['uncertainty']}")
+        print(f"Next action: {result['recommended_next_action']}")
     else:
         print(f"Resume project work — verdict={result['verdict']}")
         print(f"  project_summary: {result['project_summary']}")
@@ -797,6 +849,52 @@ def handle_uninstall(args: argparse.Namespace) -> int:
         for path in plan["preserved"]:
             print(f"  preserved: {path}")
     return 0
+
+
+def handle_policy_check(args: argparse.Namespace) -> int:
+    result = load_policy(_resolve_repo_arg(args.repo))
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Policy: {result['status']}")
+        if result.get("errors"):
+            for error in result["errors"]:
+                print(f"  error: {error['code']} — {error['message']}")
+        elif result.get("effective_rules"):
+            print(f"  file: {result['policy_path']}")
+            print("  rules: valid declarative policy")
+    return 0 if result["status"] in {"POLICY_NOT_PRESENT", "POLICY_VALID"} else 1
+
+
+def handle_policy_explain(args: argparse.Namespace) -> int:
+    result = load_policy(_resolve_repo_arg(args.repo))
+    if args.json:
+        print(json.dumps({"schema_version": 1, "policy": result, "execution_performed": False}, indent=2))
+    else:
+        print(f"Policy: {result['status']}")
+        policy = result.get("effective_rules")
+        if policy:
+            print(f"  required checks: {', '.join(policy['required_checks']) or 'none'}")
+            print(f"  approvals: {', '.join(policy['approval_required_for']) or 'none'}")
+            print(f"  safe change validation required: {policy['safe_change']['require_validation']}")
+            print(f"  release allows incomplete checks: {policy['release']['allow_incomplete']}")
+        else:
+            print("  no policy rules are active; current default workflow behavior applies.")
+    return 0 if result["status"] in {"POLICY_NOT_PRESENT", "POLICY_VALID"} else 1
+
+
+def handle_policy_dry_run(args: argparse.Namespace) -> int:
+    result = policy_dry_run(_resolve_repo_arg(args.repo), args.workflow)
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Policy dry-run — {args.workflow}: {result['verdict']}")
+        print("  execution performed: no")
+        print("  writes performed: no")
+        policy = result.get("policy", {})
+        for error in policy.get("errors", []):
+            print(f"  error: {error['code']} — {error['message']}")
+    return 0 if result["verdict"] != "POLICY_WOULD_BLOCK" else 1
 
 
 def _mcp_tool_count() -> int:

@@ -11,3 +11,4 @@ Only verified limitations are listed here.
 | KI-005 | 0.2.0 | Update-check depends on public network availability. | Offline checks report unknown status. | Retry when online; do not infer “up to date”. | Open |
 | KI-006 | 0.2.0 | Pytest may be unavailable in a project environment. | Test validation can be incomplete. | Follow the advisory remediation command. | Open |
 | KI-007 | 0.2.0 | Rollback requires a retained commit, tag, or environment. | Rollback is not guaranteed for every installation. | Preserve the old environment until verification. | Open |
+| KI-008 | 0.2.0 | Repository policy v1 supports only a small local schema. | Team/remote governance is not provided. | Use versioned local policy files and normal review. | Open |

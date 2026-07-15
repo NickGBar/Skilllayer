@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import platform
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ def build_diagnostics(repo: str | None, doctor: dict[str, Any], *, tool_count: i
             project_python = {"status": "INCOMPLETE", "observed": "no supported project-local Python environment detected"}
     return sanitize({
         "product_version": product_version(),
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "operating_system": platform.system(),
         "architecture": platform.machine(),
         "python_version": platform.python_version(),

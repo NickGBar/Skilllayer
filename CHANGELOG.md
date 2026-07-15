@@ -8,6 +8,7 @@
 - One-prompt AI-assisted installation and a disposable tester sandbox.
 - Local sanitized diagnostics.
 - Read-only public update checks and explicit uninstall dry runs.
+- Local repository policy v1 with Safe Code Change and Release Readiness integration.
 
 ### Changed
 
