@@ -24,6 +24,8 @@ from .cost_optimization import run_cost_optimization_report
 from .cursor_mcp_validation import run_cursor_mcp_validation
 from .demand_tracking import DEMAND_EVENTS_JSONL, build_demand_report
 from .diagnostics import build_diagnostics
+from .operations import apply_uninstall_plan, build_uninstall_plan, detect_installation_type
+from .update_check import check_for_update
 from .failure_analysis import analyze_failures
 from .feedback_registry import ALLOWED_PLATFORMS, ALLOWED_STATUSES, build_feedback_report
 from .generalization import run_generalization_validation
@@ -70,6 +72,8 @@ COMMANDS = {
     "skills",
     "doctor",
     "diagnostics",
+    "update-check",
+    "uninstall",
     "mcp-config",
     "mcp-config-check",
     "safe-change", "release-readiness", "resume-work",
@@ -99,7 +103,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     started = time.perf_counter()
     command_name = str(getattr(args, "command", None) or argv[0] or "unknown")
-    if automatic_telemetry_enabled() and command_name != "release-check":
+    telemetry_exempt = {"release-check", "update-check", "diagnostics"}
+    if automatic_telemetry_enabled() and command_name not in telemetry_exempt:
         telemetry_paths = (
             automatic_telemetry_paths()
             if command_name in {"run", "inspect"}
@@ -119,10 +124,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         exit_code = int(args.handler(args))
     except Exception:
-        if command_name != "release-check":
+        if command_name not in telemetry_exempt:
             record_cli_activity_best_effort(command_name, success=False, started=started)
         raise
-    if command_name != "release-check":
+    if command_name not in telemetry_exempt:
         record_cli_activity_best_effort(command_name, success=exit_code == 0, started=started)
     return exit_code
 
@@ -173,6 +178,19 @@ def build_parser() -> argparse.ArgumentParser:
     diagnostics_parser.add_argument("--output", type=Path, default=None, help="Write the report locally; refuses existing paths by default.")
     diagnostics_parser.add_argument("--force", action="store_true", help="Explicitly allow replacing --output.")
     diagnostics_parser.set_defaults(handler=handle_diagnostics)
+
+    update_parser = subparsers.add_parser("update-check", help="Check the public release status without changing anything.")
+    update_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    update_parser.set_defaults(handler=handle_update_check)
+
+    uninstall_parser = subparsers.add_parser("uninstall", help="Remove only SkillLayer integration from a project.")
+    uninstall_parser.add_argument("--repo", default=None, help="Project path. Defaults to the current directory.")
+    uninstall_parser.add_argument("--dry-run", action="store_true", help="Show planned changes without modifying anything.")
+    uninstall_parser.add_argument("--remove-venv", action="store_true", help="Remove a recognizable project-local .venv after confirmation.")
+    uninstall_parser.add_argument("--remove-project-state", action="store_true", help="Remove .skilllayer project memory after confirmation.")
+    uninstall_parser.add_argument("--confirm", action="store_true", help="Confirm requested destructive removals.")
+    uninstall_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    uninstall_parser.set_defaults(handler=handle_uninstall)
 
     safe_change_parser = subparsers.add_parser("safe-change", help="Plan and validate a code change safely (host agent performs the edit).")
     safe_change_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
@@ -720,6 +738,64 @@ def handle_diagnostics(args: argparse.Namespace) -> int:
         print(f"  doctor: {result['doctor_summary']['overall_status']}")
         print(f"  MCP tools: {result['mcp_tool_count']}")
         print("  Review this report before sharing. It is generated locally and is not uploaded automatically.")
+    return 0
+
+
+def handle_update_check(args: argparse.Namespace) -> int:
+    result = check_for_update(installation_type=detect_installation_type())
+    if args.json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"SkillLayer update status: {result['status']}")
+        print(f"  installed: {result['installed_version']}")
+        print(f"  latest known public release: {result['latest_known_public_release'] or 'unknown'}")
+        print(f"  source: {result['checked_source']}")
+        print(f"  recommended command: {result['recommended_update_command']}")
+        print("  environment changed: no")
+        if result.get("error_code"):
+            print(f"  note: {result['error_code']}")
+    return 0
+
+
+def handle_uninstall(args: argparse.Namespace) -> int:
+    plan = build_uninstall_plan(args.repo, remove_venv=args.remove_venv, remove_project_state=args.remove_project_state)
+    if plan.get("status") != "READY":
+        if args.json:
+            print(json.dumps(plan, indent=2))
+        else:
+            print(f"SkillLayer uninstall: {plan['status']}")
+            print(f"  error: {plan.get('error_code')}")
+        return 1
+    destructive = args.remove_venv or args.remove_project_state
+    if destructive and not args.confirm:
+        plan["requires_confirmation"] = True
+        if args.json:
+            print(json.dumps(plan, indent=2))
+        else:
+            print("Confirmation required for requested environment or project-state deletion.")
+            for change in plan["changes"]:
+                print(f"  planned: {change['action']} ({change['path']})")
+            print("  rerun with --confirm after reviewing the paths.")
+        return 2
+    if args.dry_run:
+        if args.json:
+            print(json.dumps(plan, indent=2))
+        else:
+            print("SkillLayer uninstall — Dry run: no files changed")
+            for change in plan["changes"]:
+                print(f"  planned: {change['action']} ({change['path']})")
+            for path in plan["preserved"]:
+                print(f"  preserved: {path}")
+        return 0
+    plan = apply_uninstall_plan(plan)
+    if args.json:
+        print(json.dumps(plan, indent=2))
+    else:
+        print("SkillLayer uninstall completed")
+        for path in plan.get("removed", []):
+            print(f"  removed: {path}")
+        for path in plan["preserved"]:
+            print(f"  preserved: {path}")
     return 0
 
 

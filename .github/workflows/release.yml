@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check tag and install test dependencies
+        run: |
+          python scripts/check_tag_version.py "${GITHUB_REF_NAME}"
+          python -m pip install --upgrade pip build
+          python -m pip install -e ".[mcp,dev]"
+      - name: Run full suite
+        run: python -u -m pytest tests/ -q -p no:cacheprovider
+      - name: Build artifacts
+        run: python -m build --outdir "$RUNNER_TEMP/dist"
+      - name: Artifact boundary and checksum scan
+        run: |
+          ! find "$RUNNER_TEMP/dist" -type f \( -name '*.env' -o -name '*diagnostics*' -o -name '*results*' \) -print -quit | grep -q .
+          sha256sum "$RUNNER_TEMP/dist"/* > "$RUNNER_TEMP/dist/SHA256SUMS"
+      - name: Fresh wheel smoke
+        run: |
+          python -m venv "$RUNNER_TEMP/release-venv"
+          "$RUNNER_TEMP/release-venv/bin/python" -m pip install "$RUNNER_TEMP/dist/"*.whl
+          "$RUNNER_TEMP/release-venv/bin/python" -m skilllayer --version
+          "$RUNNER_TEMP/release-venv/bin/python" -m skilllayer doctor --json
+          "$RUNNER_TEMP/release-venv/bin/python" -m skilllayer diagnostics --json
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: skilllayer-${{ github.ref_name }}
+          path: ${{ runner.temp }}/dist/*
+
+  publish:
+    needs: validate-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: skilllayer-${{ github.ref_name }}
+          path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --verify-tag --generate-notes=false --title "SkillLayer ${GITHUB_REF_NAME}"

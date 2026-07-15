@@ -38,6 +38,8 @@ user-approved dedicated SkillLayer directory:
    --json.
    Also run .venv/bin/python -m skilllayer --version and, if useful, generate
    local-only diagnostics with .venv/bin/python -m skilllayer diagnostics.
+   Optionally run .venv/bin/python -m skilllayer update-check --json; this is a
+   bounded read-only public release lookup and never performs an update.
 4. Generate a separate MCP config with
    .venv/bin/skilllayer mcp-config --output skilllayer-mcp.json, then validate
    it with .venv/bin/skilllayer mcp-config-check skilllayer-mcp.json --json.
@@ -69,8 +71,10 @@ At the end, report:
 - whether global state was modified (this must be no);
 - whether unrelated repositories were accessed (this must be no);
 - rollback instructions: remove only mcpServers.skilllayer from the approved
-  client config, then run ./scripts/uninstall.sh --remove-venv from the
-  SkillLayer checkout or remove that dedicated checkout after reviewing it;
+  client config, then review `./scripts/uninstall.sh --dry-run` and, only after
+  explicit confirmation, run `./scripts/uninstall.sh --remove-venv --confirm`
+  from the SkillLayer checkout or remove that dedicated checkout after
+  reviewing it;
 - recommended next action: optionally try the disposable sandbox at
   https://github.com/NickGBar/skilllayer-tester-sandbox using the separate
   ONE_PROMPT_TEST.md guide.

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .mcp_config import validate_config
+from .operations import detect_installation_type
 from .sanitization import sanitize
 from .version import product_version
 
@@ -39,7 +40,7 @@ def build_diagnostics(repo: str | None, doctor: dict[str, Any], *, tool_count: i
         "operating_system": platform.system(),
         "architecture": platform.machine(),
         "python_version": platform.python_version(),
-        "installation_type": "installed_distribution",
+        "installation_type": detect_installation_type(),
         "doctor_summary": {"overall_status": doctor.get("overall_status"), "success": doctor.get("success")},
         "mcp_configuration": mcp_status,
         "mcp_handshake": {"status": "INCOMPLETE", "observed": "not started by diagnostics"},

@@ -7,12 +7,14 @@
 - Safe Code Change, Release Readiness, and Resume Project Work.
 - One-prompt AI-assisted installation and a disposable tester sandbox.
 - Local sanitized diagnostics.
+- Read-only public update checks and explicit uninstall dry runs.
 
 ### Changed
 
 - Professional-engineering-skill positioning and project-scoped MCP onboarding.
 - Target-repository Python environment selection and advisory environment remediation.
 - Consistent product version reporting and supported-Python installer selection.
+- Tested update, rollback guidance, compatibility, support, and known-issue entry points.
 
 ### Fixed
 
@@ -24,6 +26,7 @@
 
 - No automatic dependency installation or telemetry.
 - Explicit stateful writes, no hidden repository writes, and bounded remediation.
+- Uninstall preserves project memory and unrelated MCP entries by default.
 
 ### Known limitations
 
