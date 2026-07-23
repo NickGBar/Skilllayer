@@ -177,7 +177,7 @@ Reading never repairs or rewrites what it finds, however malformed:
 - Unexpected *extra* fields (forward-compatible case) → tolerated; the record
   is still read successfully with the extra field intact.
 - A write that would need to overwrite an existing-but-corrupt
-  `result.json`/`checkpoint.json` while auto-deriving a value from it (attempt
+  `baseline.json`, `scope_amendments.json`, `result.json`/`checkpoint.json` while auto-deriving a value from it (attempt
   number, checkpoint version) refuses rather than silently overwriting
   possible forensic evidence of the corruption; passing the value explicitly
   bypasses this guard (a deliberate overwrite decision).
