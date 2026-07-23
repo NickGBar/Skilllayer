@@ -9,7 +9,8 @@
 
 ## Scope
 
-This document covers only `src/skilllayer/tasks/persistence.py`: deterministic
+This document covers `src/skilllayer/tasks/persistence.py` and Foundation C's
+task-local checkpoint records: deterministic
 task IDs, `.skilllayer/tasks/<task-id>/` directory confinement, the
 redaction/rejection gate, consent enforcement, atomic write-once/latest-wins
 records, and recovery-safe reads. It does **not** cover scope-contract
@@ -158,6 +159,13 @@ and `memory_lock` (a process-local `RLock` plus, on POSIX, `fcntl.flock` over
 the same repository serialize their writes through the same lock. This is
 accepted for the foundation milestone rather than building task-scoped
 locking as a second mechanism.
+
+Foundation C additionally writes immutable checkpoint history and an atomic
+latest pointer only under the same task directory, after a declared
+`checkpoint` consent. It validates sequence/predecessor links and record
+digests before reuse. `ownership.json` is an explicit, short-lived task-local
+lease under separately declared `ownership` consent; no background heartbeat
+or global state is introduced.
 
 ## Recovery semantics
 
