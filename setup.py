@@ -37,7 +37,7 @@ PUBLIC_MAINTAINER_MODULES = frozenset({
 })
 
 PUBLIC_RUNTIME_MODULES = REQUIRED_RUNTIME_MODULES | PUBLIC_MAINTAINER_MODULES
-PUBLIC_PACKAGE_PREFIXES = ("src/skilllayer/config/", "src/skilllayer/llm/", "src/skilllayer/macros/", "src/skilllayer/memory/", "src/skilllayer/router/", "src/skilllayer/runner/", "src/skilllayer/tools/", "src/skilllayer/verifier/", "src/skilllayer/workflows/")
+PUBLIC_PACKAGE_PREFIXES = ("src/skilllayer/config/", "src/skilllayer/llm/", "src/skilllayer/macros/", "src/skilllayer/memory/", "src/skilllayer/router/", "src/skilllayer/runner/", "src/skilllayer/tasks/", "src/skilllayer/tools/", "src/skilllayer/verifier/", "src/skilllayer/workflows/")
 
 
 def is_public_release_file(path: str) -> bool:
