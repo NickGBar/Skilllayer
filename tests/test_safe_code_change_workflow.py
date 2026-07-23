@@ -118,6 +118,21 @@ class TestValidatePhase:
         assert r["verdict"] == "CHANGE_INCOMPLETE"
         assert r["success"] is False
 
+    def test_changed_files_without_started_tests_are_incomplete(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        (repo / "app.py").write_text("VALUE = 1\n")
+        _git(["add", "app.py"], cwd=repo)
+        _git(["commit", "-m", "initial"], cwd=repo)
+        (repo / "app.py").write_text("VALUE = 2\n")
+
+        r = build_safe_change_artifacts(repo, "change VALUE", phase="validate")
+
+        assert r["tests_run"] is False
+        assert r["tests_started"] is False
+        assert r["validation_complete"] is False
+        assert r["verdict"] == "CHANGE_INCOMPLETE"
+        assert r["success"] is False
+
     def test_save_context_discloses_written_paths(self, tmp_path):
         repo = _passing_repo(tmp_path)
         (repo / "app.py").write_text("def greet(name):\n    return f'hello {name}'\n# comment\n")
@@ -125,6 +140,31 @@ class TestValidatePhase:
         assert r["written_paths"]
         for rel in r["written_paths"]:
             assert (repo / rel).exists()
+
+    def test_requested_context_save_failure_prevents_validated_verdict(self, tmp_path, monkeypatch):
+        repo = _passing_repo(tmp_path)
+        (repo / "app.py").write_text("def greet(name):\n    return f'hello {name}'\n# comment\n")
+        monkeypatch.setattr(
+            "skilllayer.runner.core.build_save_context_artifacts",
+            lambda *_args, **_kwargs: {
+                "success": False,
+                "error_code": "memory_permission_denied",
+                "error": "permission denied",
+                "written_paths": [],
+            },
+        )
+
+        r = build_safe_change_artifacts(
+            repo,
+            "add a comment",
+            phase="validate",
+            save_context=True,
+        )
+
+        assert r["verdict"] == "CHANGE_INCOMPLETE"
+        assert r["success"] is False
+        assert r["error_code"] == "memory_permission_denied"
+        assert r["written_paths"] == []
 
     def test_validate_without_save_context_writes_nothing(self, tmp_path):
         repo = _passing_repo(tmp_path)

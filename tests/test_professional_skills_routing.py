@@ -7,7 +7,47 @@ and that adding these predicates did not regress existing routes.
 """
 from __future__ import annotations
 
+import pytest
+
 from skilllayer.router import SkillRouter
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected_task_type"),
+    [
+        ("Исправь этот баг аккуратно и проверь результат.", "safe_code_change"),
+        ("Make this change without touching unrelated files.", "safe_code_change"),
+        ("Implement this safely and validate it.", "safe_code_change"),
+        ("Перед изменением составь план и проверь diff.", "safe_code_change"),
+        ("Можно ли это пушить?", "release_readiness"),
+        ("Проверь, готов ли проект к релизу.", "release_readiness"),
+        ("Is this safe to release?", "release_readiness"),
+        ("Покажи блокеры перед публикацией.", "release_readiness"),
+        ("Продолжи работу с прошлого раза.", "resume_project_work"),
+        ("Восстанови контекст проекта.", "resume_project_work"),
+        ("What was completed and what should I do next?", "resume_project_work"),
+        ("Продолжи задачу в новой сессии.", "resume_project_work"),
+    ],
+)
+def test_professional_routing_recall_evaluation(phrase, expected_task_type):
+    assert SkillRouter().route(phrase).task_type == expected_task_type
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected_task_type"),
+    [
+        ("run the unit tests", "run_tests"),
+        ("show git status", "git_status"),
+        ("find function authenticate", "find_function"),
+        ("scan for secrets", "detect_secrets"),
+        ("make the CLI faster", "clarify_intent"),
+        ("push the current branch", "clarify_intent"),
+        ("show blockers in this function", "clarify_intent"),
+        ("restore context", "rehydrate_context"),
+    ],
+)
+def test_professional_routing_negative_controls(phrase, expected_task_type):
+    assert SkillRouter().route(phrase).task_type == expected_task_type
 
 
 class TestSafeChangeRouting:

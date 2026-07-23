@@ -45,12 +45,12 @@ def _complete_fixture(tmp_path: Path) -> Path:
 
 
 class TestBoundedDefaults:
-    def test_complete_fixture_ready_with_or_without_limitations(self, tmp_path):
+    def test_complete_fixture_is_incomplete_until_tests_run(self, tmp_path):
         repo = _complete_fixture(tmp_path)
         r = build_release_readiness_artifacts(repo)
         assert r["skill"] == "release_readiness"
         assert r["blockers"] == []
-        assert r["verdict"] in ("READY_FOR_CAREFUL_TESTERS", "READY_WITH_KNOWN_LIMITATIONS")
+        assert r["verdict"] == "INCOMPLETE_ASSESSMENT"
         assert r["secret_scan_status"] == "clear_for_supported_patterns"
         assert r["package_status"]["pyproject_toml"] is True
         assert r["package_status"]["pyproject_parses"] is True
@@ -64,6 +64,16 @@ class TestBoundedDefaults:
         assert r["test_status"]["tests_passed"] is True
         assert r["checks_incomplete"] == []
         assert r["verdict"] == "READY_FOR_CAREFUL_TESTERS"
+
+    def test_bounded_mode_with_tests_not_started_is_incomplete(self, tmp_path):
+        repo = _complete_fixture(tmp_path)
+        build_save_context_artifacts(repo, "healthy baseline", [])
+
+        r = build_release_readiness_artifacts(repo)
+
+        assert r["test_status"]["tests_run"] is False
+        assert any(item["check"] == "test_status" for item in r["checks_incomplete"])
+        assert r["verdict"] == "INCOMPLETE_ASSESSMENT"
 
     def test_deep_mode_failing_tests_not_ready(self, tmp_path):
         repo = _complete_fixture(tmp_path)

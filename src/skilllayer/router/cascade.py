@@ -179,8 +179,12 @@ class SkillRouter:
             or re.search(r"\bplan\s+a\s+safe\s+(?:code\s+)?(?:change|modification)\b", text)
             or re.search(r"\bhelp\s+me\s+(?:change|implement)\s+this\s+feature\s+safely\b", text)
             or re.search(r"\bwithout\s+breaking\s+(?:unrelated\s+)?(?:behavior|things|anything)\b", text)
+            or re.search(r"\b(?:make|implement)\s+this\s+change\b.*\b(?:safely|without\s+touching\s+unrelated\s+files)\b", text)
+            or re.search(r"\b(?:fix|change|implement)\b.*\bsafely\b.*\b(?:check|validate|verify)\b", text)
             or re.search(r"\bverify\s+this\s+change\b", text)
             or re.search(r"\bmake\s+(?:this\s+)?(?:code\s+)?change\s+and\s+verify\b", text)
+            or re.search(r"\b(?:исправь|измени|реализуй)\b.*\b(?:аккуратно|безопасно)\b.*\bпроверь\b", text)
+            or re.search(r"\bперед\s+изменени(?:ем|ями)\b.*\bплан\b.*\b(?:diff|изменени[яй])\b", text)
         )
 
     def _looks_like_release_readiness_request(self, text: str) -> bool:
@@ -192,7 +196,10 @@ class SkillRouter:
             or re.search(r"\bprepare\s+(?:this\s+)?(?:repo|repository|project)?\s*for\s+(?:careful\s+)?external\s+testers\b", text)
             or re.search(r"\brelease\s+readiness\b", text)
             or re.search(r"\bpre-?release\s+check\b", text)
-            or re.search(r"\bsafe\s+to\s+publish\b", text)
+            or re.search(r"\bsafe\s+to\s+(?:publish|release|ship)\b", text)
+            or re.search(r"\bможно\s+ли\b.*\b(?:пушить|релизить|публиковать)\b", text)
+            or re.search(r"\bготов\s+ли\b.*\b(?:к\s+)?релизу\b", text)
+            or re.search(r"\bблокер[ыа-я]*\b.*\bперед\b.*\b(?:публикац[а-я]*|релизом)\b", text)
         )
 
     def _looks_like_resume_work_request(self, text: str) -> bool:
@@ -206,6 +213,8 @@ class SkillRouter:
             or re.search(r"\brecover\s+(?:the\s+)?project\s+state\b", text)
             or re.search(r"\bresume\s+(?:project\s+)?work\b", text)
             or re.search(r"\b(?:start\s+a\s+new\s+session|new\s+session)\b.*\brecover\b", text)
+            or re.search(r"\bпродолжи\s+(?:работу|задачу)\b.*\b(?:с\s+прошлого\s+раза|в\s+новой\s+сессии)\b", text)
+            or re.search(r"\bвосстанови\s+контекст\s+проекта\b", text)
         )
 
     def _looks_like_add_helper_request(self, text: str) -> bool:

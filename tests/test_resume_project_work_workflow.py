@@ -93,6 +93,26 @@ class TestResumeWork:
         assert r["detected_drift"]["first_run"] is False
         assert r["detected_drift"]["commit_count"] >= 1
 
+    def test_commit_after_context_save_is_not_treated_as_current_without_activity_baseline(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        repo = _init_repo(tmp_path)
+        monkeypatch.setattr(
+            "skilllayer.memory.skilllayer_memory._utc_iso",
+            lambda: "2000-01-01T00:00:00Z",
+        )
+        build_save_context_artifacts(repo, _STRUCTURED_STATE, [])
+        (repo / "new_file.txt").write_text("new")
+        _git(["add", "-A"], cwd=repo)
+        _git(["commit", "-m", "second commit"], cwd=repo)
+
+        r = build_resume_work_artifacts(repo)
+
+        assert r["verdict"] == "READY_WITH_REPOSITORY_DRIFT"
+        assert r["detected_drift"]["commit_after_context_save"] is True
+
     def test_uncommitted_files_reflected_in_unfinished_work(self, tmp_path):
         repo = _init_repo(tmp_path)
         build_save_context_artifacts(repo, _STRUCTURED_STATE, [])

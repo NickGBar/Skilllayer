@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import json
 import os
 import re
@@ -33,6 +32,19 @@ _GRACEFUL_TERMINATE_WAIT_SECONDS = 3.0
 # block the caller indefinitely even in a pathological case.
 _POST_KILL_REAP_TIMEOUT_SECONDS = 5.0
 _PYTHON_PROBE_TIMEOUT_SECONDS = 3.0
+_TEST_DISCOVERY_IGNORED_DIRS = frozenset({
+    ".git",
+    ".nox",
+    ".tox",
+    ".venv",
+    "venv",
+    "env",
+    "node_modules",
+    "site-packages",
+    "__pycache__",
+    "build",
+    "dist",
+})
 
 
 @dataclass(frozen=True)
@@ -378,11 +390,16 @@ class TestRunner:
     def detect(self, repo_path: Path) -> list[str] | None:
         if self.command:
             return self.command
-        test_files = [path for path in repo_path.rglob("*.py") if path.name.startswith("test_") or "tests" in path.parts]
+        test_files = [
+            path
+            for path in repo_path.rglob("*.py")
+            if not any(part in _TEST_DISCOVERY_IGNORED_DIRS for part in path.relative_to(repo_path).parts)
+            and (path.name.startswith("test_") or "tests" in path.relative_to(repo_path).parts)
+        ]
         if test_files:
             test_dir = self._conventional_test_dir_name(repo_path)
             selected_python = self.select_python_interpreter(repo_path).selected_python or sys.executable
-            if self._has_pytest_signal(repo_path) or importlib.util.find_spec("pytest") is not None:
+            if self._has_pytest_signal(repo_path) or not self._has_unittest_signal(test_files):
                 command = [selected_python, "-m", "pytest", "-q"]
                 if test_dir is not None:
                     command.append(test_dir)
@@ -459,6 +476,33 @@ class TestRunner:
                     return True
             except OSError:
                 pass
+        return False
+
+    @staticmethod
+    def _has_unittest_signal(test_files: list[Path]) -> bool:
+        """Detect stdlib unittest without consulting SkillLayer's environment.
+
+        Test framework choice must be determined by the target repository.
+        Whether pytest happens to be installed alongside SkillLayer is not
+        evidence that a target repository uses pytest.
+        """
+        inspected = 0
+        for path in test_files:
+            if any(part in _TEST_DISCOVERY_IGNORED_DIRS for part in path.parts):
+                continue
+            if inspected >= 200:
+                break
+            inspected += 1
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")[:64_000]
+            except OSError:
+                continue
+            if (
+                re.search(r"(?m)^\s*import\s+unittest\b", text)
+                or re.search(r"(?m)^\s*from\s+unittest\b", text)
+                or re.search(r"\bunittest\.TestCase\b", text)
+            ):
+                return True
         return False
 
     def _nested_pytest_guard(self, repo_path: Path, command: list[str]) -> dict[str, Any] | None:

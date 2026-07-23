@@ -144,6 +144,33 @@ class TestTargetExecution:
         assert result["environment_error_code"] == "pytest_not_installed_in_selected_environment"
         assert result["tests_started"] is False
 
+    def test_unittest_only_project_does_not_depend_on_skilllayer_pytest(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        python = _venv(repo, system_site_packages=False)
+        (repo / "tests" / "test_app.py").write_text(
+            "import unittest\n\n"
+            "class TestApp(unittest.TestCase):\n"
+            "    def test_ok(self):\n"
+            "        self.assertEqual(1 + 1, 2)\n"
+        )
+
+        result = TestRunner().run(repo)
+
+        assert result["selected_python"] == str(python)
+        assert result["command"][:3] == [str(python), "-m", "unittest"]
+        assert result["tests_started"] is True
+        assert result["environment_error"] is False
+        assert result["returncode"] == 0
+
+    def test_dependency_tests_inside_local_venv_are_not_project_tests(self, tmp_path: Path) -> None:
+        repo = _repo(tmp_path)
+        _venv(repo, system_site_packages=False)
+        dependency_test = repo / ".venv" / "lib" / "site-packages" / "dependency" / "tests" / "test_dependency.py"
+        dependency_test.parent.mkdir(parents=True)
+        dependency_test.write_text("def test_dependency(): assert True\n")
+
+        assert TestRunner().detect(repo) is None
+
     def test_import_error_before_collection_is_not_test_failure(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)
         _target_python_with_pytest(repo)

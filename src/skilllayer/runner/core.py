@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -7883,6 +7884,7 @@ def build_safe_change_artifacts(
         warnings.append("No test command detected or provided; tests were not run.")
 
     written_paths: list[str] = []
+    context_save_error: dict[str, Any] | None = None
     if save_context:
         state = (
             f"Safe code change: {task.strip()}. "
@@ -7891,6 +7893,14 @@ def build_safe_change_artifacts(
         )
         save_artifacts = build_save_context_artifacts(repo, state, [])
         written_paths = list(save_artifacts.get("written_paths", []) or [])
+        if not save_artifacts.get("success"):
+            context_save_error = {
+                "code": save_artifacts.get("error_code") or "context_save_failed",
+                "message": save_artifacts.get("error") or "Requested context could not be saved.",
+            }
+            warnings.append(
+                "Validation completed, but the explicitly requested context snapshot was not saved."
+            )
 
     policy_requires_validation = bool(policy_status == "POLICY_VALID" and policy_result["normalized_policy"]["safe_change"].get("require_validation"))
     if not changed_files:
@@ -7906,10 +7916,17 @@ def build_safe_change_artifacts(
     elif tests_run and not tests_passed:
         verdict, success = "VALIDATION_FAILED", False
         next_action = "Fix the failing tests, then call again with phase='validate'."
-    elif policy_requires_validation and not tests_run:
+    elif not tests_run:
         verdict, success = "CHANGE_INCOMPLETE", False
-        next_action = "Run the required validation, then call again with phase='validate'."
-    elif not tests_run or risks:
+        next_action = (
+            "Run the required validation, then call again with phase='validate'."
+            if policy_requires_validation
+            else "Provide or configure a test command, run validation, then call again with phase='validate'."
+        )
+    elif context_save_error:
+        verdict, success = "CHANGE_INCOMPLETE", False
+        next_action = "Repair the reported memory-store error, then retry validation with context saving enabled."
+    elif risks:
         verdict, success = "CHANGE_VALIDATED_WITH_WARNINGS", True
         next_action = "Review the flagged warnings/risks before committing."
     else:
@@ -7922,16 +7939,28 @@ def build_safe_change_artifacts(
         "relevant_files": relevant_files, "relevant_symbols": relevant_symbols,
         "proposed_plan": None, "executed_by": "host_agent",
         "changed_files": changed_files, "tests_run": tests_run, "tests_passed": tests_passed,
-        "tests_failed": tests_failed, "validation_complete": tests_run and not bool(environment_blocker),
+        "tests_failed": tests_failed,
+        "validation_complete": tests_run and not bool(environment_blocker) and not bool(context_save_error),
         "test_environment": test_environment, "selected_python": selected_python,
         "tests_started": tests_started, "environment_blocker": environment_blocker,
         "remediation": remediation,
         "risks": risks, "warnings": warnings, "next_action": next_action,
         "policy": policy_result, "checks": ["validation"] if tests_run else [],
         "approvals": ["dirty_worktree"] if acknowledge_dirty else [],
-        "blockers": [environment_blocker] if environment_blocker else [],
-        "evidence": {"tests_run": tests_run, "tests_started": tests_started, "validation_complete": tests_run and not bool(environment_blocker)},
-        "summary": "Safe-change validation completed with policy-aware evidence.", "error_code": "validation_incomplete" if verdict == "CHANGE_INCOMPLETE" else None,
+        "blockers": [item for item in (environment_blocker, context_save_error) if item],
+        "evidence": {
+            "tests_run": tests_run,
+            "tests_started": tests_started,
+            "validation_complete": tests_run and not bool(environment_blocker) and not bool(context_save_error),
+            "context_save_requested": save_context,
+            "context_saved": bool(save_context and written_paths),
+        },
+        "summary": "Safe-change validation completed with policy-aware evidence.",
+        "error_code": (
+            context_save_error["code"]
+            if context_save_error and verdict == "CHANGE_INCOMPLETE" and tests_run and not environment_blocker
+            else ("validation_incomplete" if verdict == "CHANGE_INCOMPLETE" else None)
+        ),
         "written_paths": written_paths, "verdict": verdict,
     }
 
@@ -8115,6 +8144,8 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
         verdict = "NOT_READY"
     elif test_environment_incomplete or secret_scan_status == "incomplete" or hidden_write_detected:
         verdict = "INCOMPLETE_ASSESSMENT"
+    elif any(item.get("check") == "test_status" for item in checks_incomplete):
+        verdict = "INCOMPLETE_ASSESSMENT"
     elif checks_incomplete and policy_disallows_incomplete:
         verdict = "INCOMPLETE_ASSESSMENT"
     elif checks_incomplete:
@@ -8244,14 +8275,33 @@ def build_resume_work_artifacts(
     activity_artifacts = build_detect_activity_artifacts(repo, persist_snapshot=False)
     first_run = activity_artifacts.get("first_run", True)
     activity_summary = activity_artifacts.get("summary", {}) or {}
+    from ..memory.skilllayer_memory import parse_frontmatter
+
+    context_meta, _ = parse_frontmatter(context_text)
+    context_created = context_meta.get("created")
+    commit_after_context_save: bool | None = None
+    git_log_code, git_log_stdout, _ = _run_git(["log", "-1", "--format=%cI"], repo)
+    if git_log_code == 0 and git_log_stdout.strip() and isinstance(context_created, str):
+        try:
+            saved_at = datetime.fromisoformat(context_created.replace("Z", "+00:00"))
+            current_commit_at = datetime.fromisoformat(git_log_stdout.strip().replace("Z", "+00:00"))
+            commit_after_context_save = current_commit_at > saved_at
+        except ValueError:
+            uncertainty.append(
+                "Context or Git commit timestamp could not be parsed; committed drift is unknown."
+            )
     detected_drift = {
         "first_run": first_run,
         "commit_count": activity_summary.get("commit_count", 0),
         "files_changed_count": activity_summary.get("files_changed_count", 0),
         "branches_changed": activity_artifacts.get("branches_changed", []),
         "active_since": activity_summary.get("active_since", False),
+        "commit_after_context_save": commit_after_context_save,
     }
-    has_drift = bool(not first_run and activity_summary.get("active_since"))
+    has_drift = bool(
+        (not first_run and activity_summary.get("active_since"))
+        or commit_after_context_save
+    )
     if first_run:
         uncertainty.append("No prior activity snapshot to compare against yet — drift detection has no baseline.")
 

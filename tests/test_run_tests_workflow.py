@@ -766,14 +766,10 @@ class TestDetectionPriority:
 
     def test_no_signal_falls_back_to_unittest(self, no_pytest_signal_repo: Path) -> None:
         """With no pytest signals, unittest discover should be returned."""
-        import importlib.util
-        if importlib.util.find_spec("pytest") is None:
-            runner = TestRunner()
-            cmd = runner.detect(no_pytest_signal_repo)
-            assert cmd is not None
-            assert "unittest" in " ".join(cmd), f"expected unittest, got {cmd!r}"
-        else:
-            pytest.skip("pytest importable in current interpreter — cannot test fallback")
+        runner = TestRunner()
+        cmd = runner.detect(no_pytest_signal_repo)
+        assert cmd is not None
+        assert "unittest" in " ".join(cmd), f"expected unittest, got {cmd!r}"
 
     def test_has_pytest_signal_true_for_pyproject_dep(self, pytest_pyproject_repo: Path) -> None:
         runner = TestRunner()
