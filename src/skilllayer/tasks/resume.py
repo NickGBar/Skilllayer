@@ -154,12 +154,22 @@ def assess_resume(project_root: Path, task_id: str) -> dict[str, Any]:
     if checkpoint["task_status"] == "ABANDONED":
         result.update(resume_verdict="TASK_ABANDONED", resume_reasons=["checkpoint_marks_task_abandoned"])
         return result
+    if checkpoint["task_status"] in {"FAILED", "BLOCKED"}:
+        result.update(resume_verdict="RESUME_BLOCKED", resume_reasons=["checkpoint_marks_task_non_resumable"])
+        return result
     contract = read_task_contract(project_root, task_id)
     baseline = read_task_baseline(project_root, task_id)
     result["contract_status"] = contract["state"]
     result["baseline_status"] = baseline["state"]
     if not contract["success"] or not baseline["success"]:
         result.update(resume_verdict="RESUME_BLOCKED", resume_reasons=["contract_or_baseline_missing_or_invalid"])
+        return result
+    ownership = read_task_ownership(project_root, task_id)
+    if ownership["ownership_status"] in {"ACTIVE", "CONFLICTED"}:
+        result.update(
+            resume_verdict="RESUME_BLOCKED",
+            resume_reasons=["active_task_owner" if ownership["ownership_status"] == "ACTIVE" else ownership.get("error", "ownership_conflicted")],
+        )
         return result
     amendments = read_scope_amendments(project_root, task_id)
     amendment_records = amendments.get("record", {}).get("amendments", []) if amendments["success"] else []
@@ -181,19 +191,13 @@ def assess_resume(project_root: Path, task_id: str) -> dict[str, Any]:
     if scope_result["verdict"] == "SCOPE_INCOMPLETE" or not scope_result["evidence_complete"]:
         result.update(resume_verdict="RESUME_INCOMPLETE", resume_reasons=scope_result["verdict_reasons"], warnings=scope_result["warnings"])
         return result
-    ownership = read_task_ownership(project_root, task_id)
-    if ownership["ownership_status"] in {"ACTIVE", "CONFLICTED"}:
-        result.update(
-            resume_verdict="RESUME_BLOCKED",
-            resume_reasons=["active_task_owner" if ownership["ownership_status"] == "ACTIVE" else ownership.get("error", "ownership_conflicted")],
-        )
-        return result
     effective = apply_scope_amendments(contract["record"], amendment_records)
     invalid_next = [path for path in checkpoint.get("files_expected_next", []) if not effective["valid"] or classify_path(path, effective["contract"], task_id=task_id) not in {"allowed", "allowed_generated"}]
     if invalid_next:
         result.update(resume_verdict="RESUME_BLOCKED", resume_reasons=["next_step_exceeds_scope"], blocked_next_steps=invalid_next)
         return result
-    requires_confirmation = checkpoint["task_status"] == "INTERRUPTED" or bool(checkpoint.get("resume_requirements")) or bool(checkpoint.get("unresolved_questions"))
+    interruption = checkpoint.get("interruption") or {}
+    requires_confirmation = checkpoint["task_status"] == "INTERRUPTED" or bool(interruption.get("requires_resume_confirmation")) or bool(checkpoint.get("resume_requirements")) or bool(checkpoint.get("unresolved_questions"))
     plan = build_resume_plan(checkpoint, scope_result=scope_result, requires_confirmation=requires_confirmation)
     result.update(
         resume_verdict="RESUME_SAFE_WITH_CONFIRMATION" if requires_confirmation else "RESUME_SAFE",

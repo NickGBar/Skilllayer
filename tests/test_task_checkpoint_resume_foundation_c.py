@@ -67,7 +67,10 @@ def _checkpoint(task_id: str, refs: list[dict[str, object]], sequence: int = 1, 
     validations = []
     if validation:
         validations = [{"validation_id": "tests", "validation_kind": "pytest", "target": "tests", "started_at": "2026-01-01T00:00:00Z", "finished_at": None, "started_successfully": True, "exit_code": None, "passed": False, "tests_collected": 0, "tests_passed": 0, "tests_failed": 0, "tests_skipped": 0, "evidence_complete": False, "limitations": ["interrupted"]}]
-    return build_checkpoint(task_id=task_id, sequence=sequence, previous_checkpoint_id=previous, checkpoint_id=checkpoint_id, task_phase="implementation", task_status=status, completed_steps=completed, remaining_steps=[{"step_id": "validate", "status": "PENDING", "action_type": "RUN_TEST", "evidence_refs": []}], evidence_refs=refs, commands_attempted=[], validations_attempted=validations, files_observed=["src/app.py"], files_expected_next=expected or ["src/app.py"], unresolved_questions=[], known_failures=[], limitations=[], resume_requirements=[])
+    interruption = None
+    if status == "INTERRUPTED":
+        interruption = {"reason": "PROCESS_TERMINATED", "active_step_may_have_mutated": True, "paths_requiring_reinspection": ["src/app.py"], "commands_outcome_unknown": [], "validations_to_rerun": ["tests"], "requires_resume_confirmation": True}
+    return build_checkpoint(task_id=task_id, sequence=sequence, previous_checkpoint_id=previous, checkpoint_id=checkpoint_id, task_phase="implementation", task_status=status, completed_steps=completed, remaining_steps=[{"step_id": "validate", "status": "PENDING", "action_type": "RUN_TEST", "evidence_refs": []}], evidence_refs=refs, commands_attempted=[], validations_attempted=validations, files_observed=["src/app.py"], files_expected_next=expected or ["src/app.py"], unresolved_questions=[], known_failures=[], limitations=[], resume_requirements=[], interruption=interruption)
 
 
 def test_checkpoint_history_is_immutable_and_resume_safe(tmp_path: Path) -> None:

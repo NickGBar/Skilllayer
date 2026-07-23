@@ -51,7 +51,7 @@ remaining_steps, blocked_steps, evidence_refs, repository_state_ref,
 contract_ref, baseline_ref, scope_validation_ref, commands_attempted,
 validations_attempted, files_observed, files_expected_next,
 unresolved_questions, known_failures, limitations, resume_requirements,
-integrity_fingerprint
+interruption, integrity_fingerprint
 ```
 
 The complete record is integrity-fingerprinted except its own fingerprint

@@ -141,6 +141,7 @@ def validate_checkpoint(value: Any, *, task_id: str | None = None) -> dict[str, 
         "evidence_refs", "repository_state_ref", "contract_ref", "baseline_ref", "scope_validation_ref",
         "commands_attempted", "validations_attempted", "files_observed", "files_expected_next",
         "unresolved_questions", "known_failures", "limitations", "resume_requirements", "integrity_fingerprint",
+        "interruption",
     }
     errors: list[str] = []
     if not isinstance(value, dict) or set(value) != required:
@@ -165,6 +166,21 @@ def validate_checkpoint(value: Any, *, task_id: str | None = None) -> dict[str, 
         errors.append("task_phase_invalid")
     if value["task_status"] not in TASK_STATUSES:
         errors.append("task_status_invalid")
+    interruption = value["interruption"]
+    if interruption is not None:
+        interruption_keys = {"reason", "active_step_may_have_mutated", "paths_requiring_reinspection", "commands_outcome_unknown", "validations_to_rerun", "requires_resume_confirmation"}
+        if (
+            not isinstance(interruption, dict) or set(interruption) != interruption_keys
+            or interruption["reason"] not in INTERRUPTION_REASONS
+            or not isinstance(interruption["active_step_may_have_mutated"], bool)
+            or not isinstance(interruption["requires_resume_confirmation"], bool)
+            or not _safe_paths(interruption["paths_requiring_reinspection"])
+            or not _bounded_list(interruption["commands_outcome_unknown"], MAX_COMMANDS)
+            or not _bounded_list(interruption["validations_to_rerun"], MAX_VALIDATIONS)
+        ):
+            errors.append("interruption_invalid")
+    if value["task_status"] == "INTERRUPTED" and interruption is None:
+        errors.append("interruption_required_for_interrupted_task")
     for key, maximum in (("completed_steps", MAX_STEPS), ("remaining_steps", MAX_STEPS), ("blocked_steps", MAX_STEPS)):
         if not _bounded_list(value[key], maximum) or not all(_valid_step(item) for item in value[key]):
             errors.append(f"{key}_invalid")
@@ -180,7 +196,10 @@ def validate_checkpoint(value: Any, *, task_id: str | None = None) -> dict[str, 
     if not _bounded_list(value["validations_attempted"], MAX_VALIDATIONS) or not all(_valid_validation(item) for item in value["validations_attempted"]):
         errors.append("validations_attempted_invalid")
     for key, maximum in (("files_observed", MAX_PATHS), ("files_expected_next", MAX_PATHS), ("unresolved_questions", MAX_QUESTIONS), ("known_failures", MAX_QUESTIONS), ("limitations", MAX_QUESTIONS), ("resume_requirements", MAX_QUESTIONS)):
-        if not _safe_paths(value[key]) if key in {"files_observed", "files_expected_next"} else not _bounded_list(value[key], maximum):
+        valid = _safe_paths(value[key]) if key in {"files_observed", "files_expected_next"} else _bounded_list(value[key], maximum)
+        if not valid:
+            errors.append(f"{key}_invalid")
+        elif key not in {"files_observed", "files_expected_next"} and not all(isinstance(item, str) and 0 < len(item) <= 160 for item in value[key]):
             errors.append(f"{key}_invalid")
     if value["integrity_fingerprint"] != _canonical_digest(value):
         errors.append("checkpoint_integrity_mismatch")
@@ -206,7 +225,8 @@ def build_checkpoint(*, task_id: str, sequence: int, task_phase: str, task_statu
         "commands_attempted": fields.get("commands_attempted", []), "validations_attempted": fields.get("validations_attempted", []),
         "files_observed": fields.get("files_observed", []), "files_expected_next": fields.get("files_expected_next", []),
         "unresolved_questions": fields.get("unresolved_questions", []), "known_failures": fields.get("known_failures", []),
-        "limitations": fields.get("limitations", []), "resume_requirements": fields.get("resume_requirements", []), "integrity_fingerprint": "",
+        "limitations": fields.get("limitations", []), "resume_requirements": fields.get("resume_requirements", []),
+        "interruption": fields.get("interruption"), "integrity_fingerprint": "",
     }
     record["integrity_fingerprint"] = _canonical_digest(record)
     return record
