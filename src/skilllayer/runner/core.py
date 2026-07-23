@@ -8060,16 +8060,26 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
             try:
                 import tomllib
             except ImportError:
-                # Python 3.10 has no stdlib tomllib. Keep this check bounded:
-                # dependency inspection already has a conservative regex
-                # fallback, so valid-looking TOML is not falsely blocked.
-                text = pyproject.read_text(encoding="utf-8")
-                package_status["pyproject_parses"] = bool(text.strip())
-                package_status["parser"] = "bounded_text_fallback"
+                # Python 3.10 has no stdlib tomllib. The conditional runtime
+                # dependency supplies the same parser rather than treating a
+                # non-empty file as valid TOML (which could create a false
+                # release-ready verdict).
+                try:
+                    import tomli as tomllib
+                except ImportError as exc:
+                    package_status["pyproject_parses"] = False
+                    package_status["parser"] = "unavailable"
+                    blockers.append(f"pyproject.toml could not be parsed because no TOML parser is available: {exc}")
+                else:
+                    with pyproject.open("rb") as fh:
+                        tomllib.load(fh)
+                    package_status["pyproject_parses"] = True
+                    package_status["parser"] = "tomli"
             else:
                 with pyproject.open("rb") as fh:
                     tomllib.load(fh)
                 package_status["pyproject_parses"] = True
+                package_status["parser"] = "tomllib"
         except Exception as exc:
             package_status["pyproject_parses"] = False
             blockers.append(f"pyproject.toml does not parse: {exc}")

@@ -90,9 +90,16 @@ def test_supported_candidate_beats_unsupported_system_python(tmp_path: Path) -> 
 
 def test_no_supported_interpreter_stops_before_venv_creation(tmp_path: Path) -> None:
     checkout = _minimal_checkout(tmp_path)
-    # macOS system paths deliberately omit Homebrew's supported Python, leaving
-    # only the unsupported system python3 (or no python3 at all).
-    result = _preflight(checkout, env={"PATH": "/usr/bin:/bin", "VIRTUAL_ENV": ""})
+    # Shadow every candidate name before falling back to system utilities. This
+    # is deterministic on Ubuntu too, where /usr/bin/python3 is supported.
+    fake_bin = tmp_path / "no-supported-python"
+    fake_bin.mkdir()
+    unsupported = fake_bin / "unsupported-python"
+    unsupported.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    unsupported.chmod(0o755)
+    for name in ("python3.13", "python3.12", "python3.11", "python3.10", "python3"):
+        (fake_bin / name).symlink_to(unsupported.name)
+    result = _preflight(checkout, env={"PATH": f"{fake_bin}:/usr/bin:/bin", "VIRTUAL_ENV": ""})
     assert result.returncode != 0
     assert "No supported Python interpreter was found" in result.stderr
     assert not (checkout / ".venv").exists()

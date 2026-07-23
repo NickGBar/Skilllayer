@@ -12,7 +12,10 @@ writes, and MCP/CLI parity.
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from skilllayer.mcp_server import skilllayer_release_readiness
 from skilllayer.runner.core import build_release_readiness_artifacts, build_save_context_artifacts
@@ -123,6 +126,14 @@ class TestBoundedDefaults:
     def test_never_false_ready_when_blockers_present(self, tmp_path):
         repo = _complete_fixture(tmp_path)
         (repo / "pyproject.toml").write_text("not valid toml [[[")
+        r = build_release_readiness_artifacts(repo)
+        assert r["blockers"]
+        assert r["verdict"] == "NOT_READY"
+
+    @pytest.mark.skipif(sys.version_info[:2] != (3, 10), reason="Python 3.10 regression coverage")
+    def test_python310_invalid_pyproject_is_never_ready(self, tmp_path):
+        repo = _complete_fixture(tmp_path)
+        (repo / "pyproject.toml").write_text("not valid toml [[[", encoding="utf-8")
         r = build_release_readiness_artifacts(repo)
         assert r["blockers"]
         assert r["verdict"] == "NOT_READY"
