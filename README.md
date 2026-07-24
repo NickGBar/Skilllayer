@@ -101,6 +101,30 @@ These map to `skilllayer_safe_change`, `skilllayer_release_readiness`, and
 free-form summary, and never claims success when a check was incomplete or
 skipped.
 
+### Verified Task Execution
+
+> Implement this as a verified task.
+
+This calls `skilllayer_vte_start` / `skilllayer_vte_checkpoint` /
+`skilllayer_vte_resume` / `skilllayer_vte_finalize` in the correct order and
+returns a structured, evidence-derived receipt instead of a self-reported
+summary:
+
+```
+Verified Task Execution
+
+✓ Baseline captured
+✓ 1 changed file(s) matched approved scope
+✓ No forbidden paths changed
+✓ Tests passed
+
+Verdict: VERIFIED COMPLETE
+```
+
+It never reports `VERIFIED COMPLETE` when tests were not recorded, the
+outcome is unknown, a forbidden path changed, or the baseline went stale
+mid-task — see [docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md](docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md).
+
 ## Writes, memory, and network
 
 Read-only workflows do not intentionally write repository files. Stateful
@@ -158,11 +182,13 @@ you can rehydrate that context in a later session.
 
 ## Advanced: low-level tools
 
-The three professional skills above are built from lower-level, independently
+The professional skills above are built from lower-level, independently
 callable building blocks: repository inspection, git history and blame,
 dependency mapping, secret scanning, dead-code detection, todo/decision
 tracking, and more. Current code registers 47 workflows: 41 `stable` and 6
 `internal`. The authoritative inventory is `skilllayer workflows --json`; it
 includes each workflow’s stability and write behavior. MCP currently exposes
-39 tools; the runtime tool list is authoritative and can change with the
-installed version.
+45 tools (39 general-purpose tools plus 6 Verified Task Execution tools); the
+runtime tool list is authoritative and can change with the installed version.
+Use `skilllayer_list_skills` for the full professional skill catalog,
+including Verified Task Execution.

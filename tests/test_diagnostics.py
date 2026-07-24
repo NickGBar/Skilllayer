@@ -30,6 +30,7 @@ def test_diagnostics_json_is_local_and_sanitized(tmp_path: Path, capsys) -> None
         "safe_code_change": True,
         "release_readiness": True,
         "resume_project_work": True,
+        "verified_task_execution": True,
     }
     assert "Review this report before sharing" in report["privacy_warning"]
 
