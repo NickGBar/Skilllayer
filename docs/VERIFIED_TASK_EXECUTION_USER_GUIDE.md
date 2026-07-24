@@ -117,7 +117,9 @@ the baseline — see the [Resume plan fields](#resume-plan-fields) below.
 vte_finalize(repo_path, task_id, tests_recorded=True, tests_passed=True,
              tests_summary_label="12 passed")
 → {"status": "COMPLETED", "receipt": {...}, "receipt_text": "Verified Task Execution\n\n✓ ...",
-   "next_action": "Task verified complete."}
+   "human_report": {...}, "human_report_markdown": "# Verified Task Report\n\n...",
+   "report_paths": [".skilllayer/tasks/<id>/report.json", ".skilllayer/tasks/<id>/report.md"],
+   "next_action": "No further verified action is required."}
 ```
 
 Never pass `tests_recorded=True` unless you actually ran the required tests
@@ -125,6 +127,17 @@ and observed a definite result. A false claim is still caught by
 scope/evidence checks (see [Prevented actions](#prevented-actions) below) —
 it is not trusted at face value, but it costs a wasted round trip, so don't
 do it.
+
+`vte_finalize` always returns a deterministic, human-readable Markdown
+report (`human_report_markdown`) alongside the structured receipt — for a
+`BLOCKED` result too, not only `COMPLETED` — so you never need a second call
+to explain what went wrong. It is derived only from the same evidence as the
+receipt and can never contradict it. `report.json`/`report.md` are persisted
+automatically (pass `persist_report=False` to skip writing them); a retry
+with identical results is idempotent, and `vte_status` can preview the
+persisted report (`report_preview`) without ever writing one itself. See
+[VTE_HUMAN_REPORT.md](VTE_HUMAN_REPORT.md) for the full schema and
+Markdown format.
 
 ### 5. Abandon (optional)
 

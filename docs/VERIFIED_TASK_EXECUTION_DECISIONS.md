@@ -163,3 +163,34 @@
   be bypassed by replaying an old token.
 - **E6** was a plain naming-consistency bug (no security impact) caught by
   a direct equality assertion between the receipt and the skill catalog.
+
+## Foundation Milestone F — Finalized Decisions (Implemented)
+
+> Records decisions made building `skilllayer.tasks.human_report` (the
+> deterministic human-readable task report) on top of the unmodified
+> Milestone E receipt/`public_api`/`interventions` modules.
+
+| # | Decision | Chosen option | Alternatives | Reason | Revisit when |
+|---|----------|---------------|--------------|--------|--------------|
+| F1 | `vte_finalize`'s `tests_status["recorded"]` means "conclusively satisfied" (recorded AND passed), not merely "a result was reported" | `tests_satisfied = bool(tests_recorded) and tests_passed is True` is what's passed to Foundation D's `finalize_task` as `recorded`; the caller's raw `tests_recorded`/`tests_passed` signal is preserved separately as `reported_recorded`/`passed` for the receipt and report to distinguish "never ran" from "ran and failed" from "ran, outcome unknown" | Pass the caller's raw `tests_recorded` straight through as `recorded` | **Found via dogfooding, before Milestone F's report layer existed**: Foundation D's `finalize_task` only ever inspects `tests_status["recorded"]`, never `"passed"` — passing the raw flag through let `tests_recorded=True, tests_passed=False` (a real, definite test *failure*) and `tests_recorded=True, tests_passed=None` (an *inconclusive* result) both silently satisfy the "tests recorded" gate and reach `TASK_VERIFIED_COMPLETE`, which is exactly the false-completion class this whole product exists to prevent | Foundation D's `finalize_task` itself grows a native pass/fail-aware test gate |
+| F2 | `overall_status` distinguishes `FAILED` from `BLOCKED` using the receipt's own `tests_summary`, not Foundation D's verdict alone | `human_report._overall_status` maps `TASK_BLOCKED` to `FAILED` specifically when `tests_summary.reported_recorded` is true and `passed` is `False`; every other `TASK_BLOCKED` reason maps to `BLOCKED` | Map `TASK_BLOCKED` to `BLOCKED` unconditionally, matching Foundation D's own vocabulary one-to-one | Foundation D's `finalize_task` collapses a definite test failure and every other block (scope/staleness/ownership) into the same `TASK_BLOCKED` verdict (per F1, it never inspects `"passed"`); a human reading "BLOCKED" for a straightforwardly failing test suite would reasonably expect "FAILED" instead — this report layer adds that distinction without changing Foundation D's own verdict vocabulary | Foundation D's `finalize_task` grows its own `TASK_TESTS_FAILED`-style verdict |
+| F3 | Markdown truncation always fully preserves `## Next action` and `## Verdict`; only the sections above them are cut | The document is rendered in two halves (body, tail); if the combined length exceeds `MAX_MARKDOWN_CHARS` (8,000), only `body` is truncated (with an explicit `[Report truncated: ...]` marker) before the untouched `tail` is appended | Truncate the whole rendered string uniformly from the end | The milestone requires "exactly one next action" and a verdict in every report; truncating from the end could silently drop both on a report with many changed paths or limitations, which would make the report actively misleading rather than merely incomplete | Never |
+| F4 | `write_human_report` is idempotent by exact content equality, not by existence | A retry with byte-identical `report`/`markdown` is a no-op success (`written_paths: []`, `idempotent: true`); a retry with *any* difference is rejected (`conflicting_report_rewrite`), never silently overwritten | Overwrite unconditionally on every call (latest-wins, like `result.json`) | The milestone explicitly requires "writing the same report twice must be idempotent" and "conflicting rewrites must fail explicitly" — a report is evidence derived from a specific receipt state, so a genuinely different rewrite attempt (e.g. two different processes finalizing concurrently with different test outcomes) must be surfaced, not silently resolved by last-write-wins | Never |
+| F5 | `vte_status` reads (`read_human_report`) but never creates or rewrites a report | Status returns a `report_preview` only when `vte_finalize` already persisted `report.json`; the read path shares no code with the write path | Have `vte_status` build and cache a report on first call | The milestone explicitly requires "no silent report writes from read-only status operations"; a read-only tool that could write on some code paths would break the "status never mutates" guarantee every other VTE read-only tool (`get_task_status`, `assess_task_resume`) already provides and that has its own dedicated regression test | Never |
+| F6 | Unsupported `locale` is rejected explicitly at both `human_report.build_human_report` and the `vte_finalize`/MCP layer, never silently substituted | `locale not in SUPPORTED_LOCALES` (currently `{"en"}`) raises `HumanReportError` in the module, and returns a structured `unsupported_locale` error one layer up | Fall back to `"en"` silently for an unrecognized locale | The milestone explicitly forbids silently using an LLM for translation and requires unsupported locales to be rejected explicitly; a silent fallback would hide a caller's mistaken assumption that translated output was returned | A translated deterministic template set for a second locale is added |
+
+## Foundation Milestone F risks resolved during verification (not merely designed)
+
+- **F1** was found during real dogfooding (before this report layer existed)
+  by observing that a call with `tests_passed=False` still produced
+  `TASK_VERIFIED_COMPLETE` — the kind of false-completion bug this entire
+  product line exists to catch, found in its own finalize wrapper.
+- **F2** was found while writing `TestDeterministicMapping::test_failed_tests`
+  — the first implementation reported "BLOCKED" for a definite test failure,
+  which is technically accurate to Foundation D's verdict but reads as
+  evasive to a human expecting "FAILED" for a failing test suite.
+- **F3** was found while writing the bounded-output test with 500 changed
+  paths and again with oversized limitation strings — an early version
+  truncated from the raw end of the string, which could (rarely, but
+  possibly) cut into the required Verdict section for a sufficiently large
+  report.

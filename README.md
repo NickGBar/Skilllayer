@@ -125,6 +125,12 @@ It never reports `VERIFIED COMPLETE` when tests were not recorded, the
 outcome is unknown, a forbidden path changed, or the baseline went stale
 mid-task — see [docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md](docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md).
 
+`skilllayer_vte_finalize` also returns a deterministic, human-readable
+Markdown report alongside the JSON receipt — for a blocked task too, so you
+never need a second call just to see what went wrong. It is derived only
+from the same evidence as the receipt and can never contradict it — see
+[docs/VTE_HUMAN_REPORT.md](docs/VTE_HUMAN_REPORT.md).
+
 ## Writes, memory, and network
 
 Read-only workflows do not intentionally write repository files. Stateful

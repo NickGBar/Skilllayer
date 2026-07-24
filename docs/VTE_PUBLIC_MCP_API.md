@@ -39,7 +39,7 @@ Read-only.
 
 **Parameters**: `repo_path`, `task_id`.
 
-**Returns**: `{"status": "OK", "task_state", "baseline_status", "scope_status", "resume_status", "evidence_complete", "safe_operations", "prohibited_operations", "confirmations_required", "next_action"}`, or `{"status": "ERROR", "error_code": "task_not_found", ...}`.
+**Returns**: `{"status": "OK", "task_state", "baseline_status", "scope_status", "resume_status", "evidence_complete", "safe_operations", "prohibited_operations", "confirmations_required", "report_preview", "next_action"}`, or `{"status": "ERROR", "error_code": "task_not_found", ...}`. `report_preview` is `null` until `skilllayer_vte_finalize` has persisted a report; when present it has `{"overall_status", "problem_summary", "next_action", "final_verdict"}`. This tool never creates or rewrites a report.
 
 ## `skilllayer_vte_checkpoint`
 
@@ -77,8 +77,10 @@ Read-only.
 | `tests_recorded` | bool | — | required; `True` only if tests actually ran |
 | `tests_passed` | bool \| None | `None` | leave `None` if inconclusive |
 | `tests_summary_label` | str | `None` | short label, e.g. `"12 passed"` |
+| `locale` | str | `"en"` | only `"en"` supported; anything else is rejected explicitly |
+| `persist_report` | bool | `True` | writes `report.json`/`report.md`; `False` returns the report without writing it |
 
-**Returns**: `{"status": "COMPLETED" | "BLOCKED", "receipt", "receipt_text", "next_action"}`. See [VTE_VERIFICATION_RECEIPT.md](VTE_VERIFICATION_RECEIPT.md) for the receipt schema.
+**Returns**: `{"status": "COMPLETED" | "BLOCKED", "receipt", "receipt_text", "human_report", "human_report_markdown", "report_paths", "next_action"}`. `human_report`/`human_report_markdown` are always present — for a `BLOCKED` result too — and can never contradict `receipt` (see [VTE_HUMAN_REPORT.md](VTE_HUMAN_REPORT.md)). `report_paths` is `[]` when `persist_report=False` or on an idempotent retry. See [VTE_VERIFICATION_RECEIPT.md](VTE_VERIFICATION_RECEIPT.md) for the receipt schema.
 
 ## `skilllayer_vte_abandon`
 

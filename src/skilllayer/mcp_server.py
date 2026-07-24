@@ -1866,14 +1866,18 @@ def skilllayer_vte_start(
 def skilllayer_vte_status(repo_path: str, task_id: str) -> dict[str, Any]:
     """Read-only: report a Verified Task Execution task's current state,
     baseline/scope/resume status, which operations are safe to call next,
-    and any confirmations still pending. Never writes anything.
+    and any confirmations still pending. Never writes anything — including
+    never creating or rewriting a human report; it only previews one if
+    skilllayer_vte_finalize already persisted it.
 
     Required: repo_path, task_id (returned by skilllayer_vte_start).
     Returns {"status": "OK", "task_state", "baseline_status",
     "scope_status", "resume_status", "safe_operations",
-    "prohibited_operations", "confirmations_required", "next_action"}, or
-    {"status": "ERROR", "error_code": "task_not_found", ...} if task_id is
-    unknown."""
+    "prohibited_operations", "confirmations_required", "report_preview",
+    "next_action"}, or {"status": "ERROR", "error_code": "task_not_found",
+    ...} if task_id is unknown. report_preview is null until
+    skilllayer_vte_finalize has run at least once; when present it has
+    {"overall_status", "problem_summary", "next_action", "final_verdict"}."""
     started = time.perf_counter()
     repo = validate_repo_path(repo_path)
     if isinstance(repo, dict):
@@ -1976,9 +1980,13 @@ def skilllayer_vte_finalize(
     tests_recorded: bool,
     tests_passed: bool | None = None,
     tests_summary_label: str | None = None,
+    locale: str = "en",
+    persist_report: bool = True,
 ) -> dict[str, Any]:
     """Validate scope against the live repository and finalize a task,
-    producing a verification receipt.
+    producing a verification receipt plus a deterministic human-readable
+    report — for a blocked or incomplete finalization too, so you never need
+    a second tool call just to understand what went wrong.
 
     Required: repo_path, task_id, tests_recorded (True only if you actually
     ran the required tests and observed a definite result — set
@@ -1988,11 +1996,18 @@ def skilllayer_vte_finalize(
     repository facts, so a false claim is caught by scope/evidence checks,
     not trusted at face value.
 
+    locale currently supports only "en" (rejected explicitly, never silently
+    substituted, if anything else is passed). persist_report (default True)
+    writes report.json/report.md under the task's own directory; set False
+    to get the report back without writing it.
+
     Returns {"status": "COMPLETED"|"BLOCKED", "receipt", "receipt_text",
-    "next_action"}. receipt["final_verdict"] is one of
-    TASK_VERIFIED_COMPLETE, TASK_COMPLETE_WITH_LIMITATIONS, TASK_INCOMPLETE,
-    TASK_BLOCKED, TASK_FAILED, TASK_ABANDONED. receipt["prevented_actions"]
-    lists any unsafe completion this call itself blocked. status is only
+    "human_report", "human_report_markdown", "report_paths", "next_action"}.
+    receipt["final_verdict"] is one of TASK_VERIFIED_COMPLETE,
+    TASK_COMPLETE_WITH_LIMITATIONS, TASK_INCOMPLETE, TASK_BLOCKED,
+    TASK_FAILED, TASK_ABANDONED. human_report_markdown is a bounded
+    (<=8000 char), deterministically-truncated Markdown rendering of the
+    same evidence as receipt — it can never contradict it. status is only
     ever "COMPLETED" when final_verdict is TASK_VERIFIED_COMPLETE or
     TASK_COMPLETE_WITH_LIMITATIONS."""
     started = time.perf_counter()
@@ -2003,7 +2018,7 @@ def skilllayer_vte_finalize(
     try:
         result = _vte.vte_finalize(
             repo, task_id, tests_recorded=tests_recorded, tests_passed=tests_passed,
-            tests_summary_label=tests_summary_label,
+            tests_summary_label=tests_summary_label, locale=locale, persist_report=persist_report,
         )
     except Exception as exc:
         result = {"status": "ERROR", "task_id": task_id, "error_code": "unexpected_error", "explanation": str(exc),

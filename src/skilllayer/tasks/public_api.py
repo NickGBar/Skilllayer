@@ -54,6 +54,14 @@ from .persistence import (
     read_task_contract,
     sanitize_persisted_value,
 )
+from .human_report import (
+    SUPPORTED_LOCALES,
+    HumanReportError,
+    build_human_report,
+    read_human_report,
+    render_human_report_markdown,
+    write_human_report,
+)
 from .receipt import build_receipt, render_receipt_text
 from .resume import load_checkpoint_chain
 
@@ -328,7 +336,9 @@ def vte_start(
 
 
 def vte_status(project_root: str | Path, task_id: str) -> dict[str, Any]:
-    """Read-only. Never writes anything."""
+    """Read-only. Never writes anything — including never creating or
+    rewriting a human report; it only previews one if vte_finalize already
+    persisted it."""
     project_root = Path(project_root)
     status = get_task_status(project_root, task_id)
     if not status.get("success"):
@@ -337,6 +347,15 @@ def vte_status(project_root: str | Path, task_id: str) -> dict[str, Any]:
             explanation=status.get("summary", "No task exists at this task_id."),
             next_action="Verify the task_id, or call vte_start to create a new task.",
         )
+    existing_report = read_human_report(project_root, task_id)
+    report_preview = None
+    if existing_report is not None:
+        report_preview = {
+            "overall_status": existing_report.get("overall_status"),
+            "problem_summary": existing_report.get("problem_summary"),
+            "next_action": existing_report.get("next_action"),
+            "final_verdict": existing_report.get("final_verdict"),
+        }
     return {
         "status": "OK",
         "task_id": task_id,
@@ -348,6 +367,7 @@ def vte_status(project_root: str | Path, task_id: str) -> dict[str, Any]:
         "safe_operations": status.get("safe_operations", []),
         "prohibited_operations": status.get("prohibited_operations", []),
         "confirmations_required": _pending_confirmations(project_root, task_id),
+        "report_preview": report_preview,
         "next_action": _status_next_action(status["current_state"]),
     }
 
@@ -616,6 +636,8 @@ def vte_finalize(
     tests_passed: bool | None = None,
     tests_summary_label: str | None = None,
     owner_instance_id: str | None = None,
+    locale: str = "en",
+    persist_report: bool = True,
 ) -> dict[str, Any]:
     """Validate scope against live repository state, then finalize.
 
@@ -624,10 +646,25 @@ def vte_finalize(
     forbidden path changed, or scope was violated — Foundation D's own
     ``finalize_task`` derives the verdict from persisted evidence and this
     wrapper never overrides it.
+
+    Always returns a deterministic human-readable report (``human_report``/
+    ``human_report_markdown``) alongside the structured receipt — for a
+    blocked or incomplete finalization too, so the caller never needs a
+    second tool call just to understand what went wrong. ``persist_report``
+    (default True) writes ``report.json``/``report.md`` under the task's own
+    consent-gated directory; set it False to get the report back without
+    writing it.
     """
     project_root = Path(project_root)
     owner_instance_id = owner_instance_id or default_owner_instance_id()
     consent = grant_task_consent(project_root, task_id)
+
+    if locale not in SUPPORTED_LOCALES:
+        return _error(
+            task_id=task_id, error_code="unsupported_locale",
+            explanation=f"locale must be one of {sorted(SUPPORTED_LOCALES)}.",
+            next_action="Call vte_finalize again with locale='en'.",
+        )
 
     status = get_task_status(project_root, task_id)
     if not status.get("success"):
@@ -648,7 +685,17 @@ def vte_finalize(
             next_action=_status_next_action(status["current_state"]),
         )
 
-    tests_status: dict[str, Any] = {"recorded": bool(tests_recorded)}
+    # Foundation D's finalize_task gates ONLY on tests_status["recorded"] — it
+    # never inspects "passed" at all. So "recorded" here must mean "the test
+    # requirement was conclusively satisfied" (recorded AND passed), never
+    # merely "a result of some kind was reported" — otherwise a genuinely
+    # failed or inconclusive result would silently let TASK_VERIFIED_COMPLETE
+    # through. The caller's raw signal is preserved separately as
+    # "reported_recorded"/"passed" so the persisted evidence and the human
+    # report can still distinguish "never ran" from "ran and failed" from
+    # "ran, outcome unknown".
+    tests_satisfied = bool(tests_recorded) and tests_passed is True
+    tests_status: dict[str, Any] = {"recorded": tests_satisfied, "reported_recorded": bool(tests_recorded)}
     if tests_recorded:
         tests_status["passed"] = tests_passed
         if tests_summary_label:
@@ -664,14 +711,25 @@ def vte_finalize(
     if finalized.get("state") == "TASK_BLOCKED":
         blockers = (finalized.get("result") or {}).get("blockers", [])
         if "tests_status_missing" in blockers or "required_tests_not_recorded" in blockers:
-            record_intervention(
-                project_root, task_id, consent=consent,
-                intervention_type="FALSE_COMPLETION_PREVENTED" if not tests_recorded else "UNKNOWN_TEST_RESULT",
-                operation="vte_finalize", rule="finalize_task requires recorded test evidence before completion.",
-                observed_condition=f"tests_recorded={tests_recorded}, tests_passed={tests_passed}",
-                prevented_outcome="Finalization was blocked; the task was not marked complete.",
-                user_action_required="Rerun the required tests and call vte_finalize again with tests_recorded=True and a definite tests_passed value.",
-            )
+            if not tests_recorded:
+                record_intervention(
+                    project_root, task_id, consent=consent, intervention_type="FALSE_COMPLETION_PREVENTED",
+                    operation="vte_finalize", rule="finalize_task requires recorded test evidence before completion.",
+                    observed_condition=f"tests_recorded={tests_recorded}, tests_passed={tests_passed}",
+                    prevented_outcome="Finalization was blocked; the task was not marked complete.",
+                    user_action_required="Rerun the required tests and call vte_finalize again with tests_recorded=True and a definite tests_passed value.",
+                )
+            elif tests_passed is None:
+                record_intervention(
+                    project_root, task_id, consent=consent, intervention_type="UNKNOWN_TEST_RESULT",
+                    operation="vte_finalize", rule="finalize_task requires a conclusive (not merely started) test result.",
+                    observed_condition=f"tests_recorded={tests_recorded}, tests_passed={tests_passed}",
+                    prevented_outcome="Finalization was blocked; the task was not marked complete.",
+                    user_action_required="Rerun the required tests and call vte_finalize again with a definite tests_passed value.",
+                )
+            # tests_passed is False: an honest, evidence-backed failure is not
+            # an intervention — nothing unsafe was attempted or prevented,
+            # this is simply a correctly-blocked, correctly-reported failure.
         if any(("forbidden_path" in b or "unexpected_path" in b or b == "scope_invalid") for b in blockers):
             record_intervention(
                 project_root, task_id, consent=consent, intervention_type="FORBIDDEN_PATH_CHANGE",
@@ -691,12 +749,27 @@ def vte_finalize(
 
     receipt = _receipt_with_confirmations(project_root, task_id)
     ok = bool(finalized.get("success"))
+
+    try:
+        report = build_human_report(receipt, locale=locale)
+    except HumanReportError:
+        report = None
+    markdown = render_human_report_markdown(report) if report is not None else None
+    report_paths: list[str] = []
+    if report is not None and persist_report:
+        written = write_human_report(project_root, task_id, consent=consent, report=report, markdown=markdown)
+        if written.get("success"):
+            report_paths = written.get("written_paths", [])
+
     return {
         "status": "COMPLETED" if ok else "BLOCKED",
         "task_id": task_id,
         "receipt": receipt,
         "receipt_text": render_receipt_text(receipt),
-        "next_action": "Task verified complete." if ok else "Review the receipt's limitations and prevented_actions, resolve them, then call vte_finalize again.",
+        "human_report": report,
+        "human_report_markdown": markdown,
+        "report_paths": report_paths,
+        "next_action": (report or {}).get("next_action", "Task verified complete." if ok else "Review the receipt's limitations and prevented_actions, resolve them, then call vte_finalize again."),
     }
 
 

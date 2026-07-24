@@ -266,3 +266,21 @@ contents, tokens, environment variables, or chain-of-thought are ever
 accepted into an intervention, confirmation, or checkpoint-claim record —
 every field passes through this module's `sanitize_persisted_value` exactly
 as it does for Foundation A's own contract/result fields.
+
+## Milestone F (human-readable report) integration
+
+`src/skilllayer/tasks/human_report.py` never inspects source code, raw
+command output, or anything outside the receipt/consent objects it is
+given — every sentence in a report is a fixed template keyed by a verified
+reason code, or a direct copy/count of a field already present in a
+Milestone E receipt, which has itself already passed through this module's
+redaction gate. `write_human_report`/`read_human_report` reuse this
+module's `TaskConsent`, `atomic_write_json`/`memory_lock`, and
+`_resolve_paths_or_blocked` path confinement directly — no second
+persistence mechanism. Two additional checks specific to this milestone:
+a `report` whose own `task_id` doesn't match the target task is rejected
+before any write (`cross_task_report_reference`, preventing cross-task
+report contamination), and the rendered Markdown is capped at 8,000
+characters (`human_report.MAX_MARKDOWN_CHARS`) as a deterministic backstop
+against an unbounded document, independent of the per-field list bounds
+already applied when the report model is built.
