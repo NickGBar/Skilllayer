@@ -198,3 +198,41 @@ Not persisted as its own file — assembled on demand by
 `get_task_status`. See
 [VTE_VERIFICATION_RECEIPT.md](VTE_VERIFICATION_RECEIPT.md) for the full
 field-by-field reference.
+
+## Milestone F human-readable report (schema version 1)
+
+`.skilllayer/tasks/<task-id>/report.json` (structured) and `report.md`
+(its Markdown rendering), written together and derived only from a
+Milestone E receipt (`receipt_version: 1`):
+
+```json
+{
+  "report_version": 1,
+  "receipt_version": 1,
+  "task_id": "20260724T105441Z-fix-auth-timeout-90b73aeb",
+  "title": "fix auth timeout",
+  "final_verdict": "TASK_VERIFIED_COMPLETE",
+  "overall_status": "SUCCESS",
+  "succeeded_items": ["Repository baseline was captured."],
+  "failed_items": [],
+  "blocked_items": [],
+  "unknown_items": [],
+  "problem_summary": null,
+  "problem_details": [],
+  "prevented_actions": [],
+  "changed_paths": ["src/auth.py"],
+  "tests": {"reported_recorded": true, "passed": true, "summary_label": "3 passed"},
+  "scope": {"status": "SCOPE_CLEAN", "allowed_changes": ["src/auth.py"], "unexpected_changes": []},
+  "resume": {"status": null, "interruptions_recovered": 0},
+  "evidence_status": "COMPLETE",
+  "limitations": [],
+  "next_action": "No further verified action is required.",
+  "created_at": "2026-07-24T10:54:41Z",
+  "locale": "en"
+}
+```
+
+`overall_status` is one of `SUCCESS`, `SUCCESS_WITH_LIMITATIONS`, `PARTIAL`,
+`BLOCKED`, `FAILED`, `ABANDONED`, `UNKNOWN`. See
+[VTE_HUMAN_REPORT.md](VTE_HUMAN_REPORT.md) for the full deterministic
+mapping, the Markdown format, and persistence semantics.

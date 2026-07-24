@@ -79,3 +79,12 @@ Verdict: VERIFIED COMPLETE
 A blocked task instead shows the specific failing line(s) (e.g. "✗ 1
 changed file(s) outside approved scope") and an "⚠ N unsafe action(s) were
 prevented" line when `prevented_actions` is non-empty.
+
+## Relationship to the human-readable report
+
+Milestone F's `skilllayer.tasks.human_report` builds a richer, deterministic
+report *from this exact receipt* — with separate succeeded/failed/blocked/
+unknown items, a problem summary, and exactly one next action — and
+`skilllayer_vte_finalize` returns both together. The receipt remains the
+canonical evidence; the human report can never contain a fact the receipt
+doesn't already state. See [VTE_HUMAN_REPORT.md](VTE_HUMAN_REPORT.md).

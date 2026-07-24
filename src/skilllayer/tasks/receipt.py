@@ -74,7 +74,8 @@ def build_receipt(project_root: Path, task_id: str) -> dict[str, Any]:
             "scope_status": None, "resume_status": None, "changed_paths": [], "allowed_changes": [],
             "unexpected_changes": [], "tests_summary": None, "checkpoints_created": 0,
             "interruptions_recovered": 0, "prevented_actions": [], "confirmations_required": [],
-            "evidence_complete": False, "limitations": ["task_status_unavailable"], "created_at": _now(),
+            "evidence_complete": False, "limitations": ["task_status_unavailable"], "blockers": [],
+            "objective_label": None, "created_at": _now(),
         }
 
     final_result = _read_final_result(project_root, task_id)
@@ -89,12 +90,18 @@ def build_receipt(project_root: Path, task_id: str) -> dict[str, Any]:
         tests_summary = final_result.get("tests_status")
         evidence_complete = bool(final_result.get("evidence_complete"))
         limitations = list(final_result.get("limitations", []))
+        blockers = list(final_result.get("blockers", []))
     else:
         final_verdict = None
         changed_paths, allowed_changes, unexpected_changes = [], [], []
         tests_summary = None
         evidence_complete = bool(status.get("evidence_complete"))
         limitations = []
+        blockers = []
+
+    from .persistence import read_task_contract
+    contract = read_task_contract(project_root, task_id)
+    objective_label = contract["record"].get("objective_label") if contract.get("success") else None
 
     return {
         "receipt_version": RECEIPT_SCHEMA_VERSION,
@@ -115,6 +122,8 @@ def build_receipt(project_root: Path, task_id: str) -> dict[str, Any]:
         "confirmations_required": [],  # populated by public_api.py callers that track live confirmation state
         "evidence_complete": evidence_complete,
         "limitations": limitations,
+        "blockers": blockers,
+        "objective_label": objective_label,
         "created_at": _now(),
     }
 
