@@ -817,3 +817,62 @@ def workflow_stability(workflow: str | None) -> str:
     if not workflow:
         return "experimental"
     return str(WORKFLOW_METADATA.get(workflow, {}).get("stability", "experimental"))
+
+
+# --- Verified Task Execution professional skill catalog entry --------------
+# Unlike safe_code_change/release_readiness/resume_project_work, this skill is
+# deliberately NOT wired into SkillRouter's automatic task_type routing: every
+# VTE operation (vte_start/vte_status/vte_checkpoint/vte_resume/vte_finalize/
+# vte_abandon) is an explicit tool call an agent chooses to make, never a
+# silent side effect of free-text classification. This entry exists so the
+# skill is truthfully discoverable (via skilllayer_list_skills and
+# diagnostics) without expanding automatic routing surface.
+VERIFIED_TASK_EXECUTION_SKILL = {
+    "name": "verified_task_execution",
+    "purpose": (
+        "Guide an agent to call the public VTE MCP tools in the correct order "
+        "so a code change is scoped, checkpointed, safely resumable after an "
+        "interruption, and only ever reported complete when backed by "
+        "recorded, persisted evidence — never by an LLM's own claim."
+    ),
+    "activation_examples": [
+        "implement this safely",
+        "make this change and verify it",
+        "continue this interrupted task",
+        "do this as a verified task",
+        "fix this without touching unrelated files",
+        "finish this and prove the tests passed",
+    ],
+    "non_activation_examples": [
+        "what does this function do",
+        "explain this file to me",
+        "translate this docstring to Spanish",
+        "brainstorm some feature ideas",
+        "just make the edit, don't bother verifying anything",
+    ],
+    "required_mcp_tools": [
+        "skilllayer_vte_start", "skilllayer_vte_status", "skilllayer_vte_checkpoint",
+        "skilllayer_vte_resume", "skilllayer_vte_finalize", "skilllayer_vte_abandon",
+    ],
+    "supported_lifecycle": ["start", "checkpoint", "interrupt", "resume", "finalize", "abandon"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Never reports TASK_VERIFIED_COMPLETE without recorded test evidence.",
+        "Never silently authorizes a scope, ownership, or resume expansion; an "
+        "ambiguous case returns a single-use, scoped, non-transferable "
+        "confirmation_token instead of proceeding.",
+        "Never resets, stashes, checks out, rebases, or otherwise mutates Git history.",
+        "Never invoked automatically by SkillRouter/skilllayer_run; every VTE "
+        "operation is an explicit tool call the agent chooses to make.",
+    ],
+    "known_limitations": [
+        "No explicit ownership-release primitive; a lease is released only "
+        "when its bounded TTL expires.",
+        ".skilllayer/ must be listed in the repository's .gitignore for scope "
+        "validation to behave correctly.",
+        "Scope paths support only exact files (EXPLICIT) or directory "
+        "prefixes (PREFIX); no glob (**) syntax.",
+        "vte_checkpoint does not accept raw command/validation records; "
+        "record test outcomes via vte_finalize's tests_recorded/tests_passed.",
+    ],
+}

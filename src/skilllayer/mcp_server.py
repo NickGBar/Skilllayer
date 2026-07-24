@@ -12,12 +12,13 @@ from typing import Any
 
 from . import SkillLayer
 from .config import load_config
-from .config.defaults import COMMAND_METADATA, MACROS, WORKFLOWS, WORKFLOW_METADATA
+from .config.defaults import COMMAND_METADATA, MACROS, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
 from .memory.skilllayer_memory import MEMORY_LOCK_CROSS_PROCESS_SUPPORTED
 from .router import SkillRouter
 from .security import blocked_workflow_reason, workflow_execution_blocked
 from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
 from .session_usage import build_session_usage_artifacts
+from .tasks import public_api as _vte
 from .telemetry import automatic_telemetry_enabled, record_tool_invocation, tool_telemetry_paths
 from .tools import inspect_repo
 
@@ -1675,6 +1676,7 @@ def skilllayer_list_skills() -> dict[str, Any]:
         "success": True,
         "macros": [{"name": name, "tools": list(tools)} for name, tools in MACROS.items()],
         "primitive_tools": primitive_tools,
+        "professional_skills": [VERIFIED_TASK_EXECUTION_SKILL],
     }
     record_mcp_telemetry("skilllayer_list_skills", result, started)
     return result
@@ -1799,6 +1801,241 @@ def skilllayer_doctor(repo_path: str | None = None, config_path: str | None = No
     return result
 
 
+def skilllayer_vte_start(
+    repo_path: str,
+    title: str,
+    persist_consent: bool = False,
+    description: str = "",
+    allowed_paths: list[str] | None = None,
+    forbidden_paths: list[str] | None = None,
+    scope_mode: str = "EXPLICIT",
+    allow_new_files: bool = True,
+    allow_deleted_files: bool = True,
+    allow_test_files: bool = True,
+    allowed_generated_paths: list[str] | None = None,
+    max_changed_files: int | None = None,
+    expected_checks: list[str] | None = None,
+) -> dict[str, Any]:
+    """Start a Verified Task Execution task: create its contract, capture a
+    repository baseline, and acquire ownership, in the correct order.
+
+    Use this tool when the user says things like "implement this safely",
+    "make this change and verify it", or "do this as a verified task".
+
+    Required: repo_path, title (a short label, e.g. "fix login timeout"),
+    and persist_consent=True — nothing is written until you pass this
+    explicitly; tell the user a task record will be created under
+    .skilllayer/tasks/ before setting it. ``description`` only helps form a
+    readable task_id; it is not persisted verbatim.
+
+    allowed_paths: exact repository-relative file paths the change may
+    touch (e.g. ["src/auth.py", "tests/test_auth.py"]). scope_mode:
+    "EXPLICIT" (allowed_paths are exact files, the default) or "PREFIX"
+    (allowed_paths are directory prefixes ending in "/"). No glob ("**")
+    syntax is supported in either mode.
+
+    Returns {"status": "READY", "task_id", "owner_instance_id", "scope",
+    "baseline", "next_action"} on success, or {"status": "ERROR",
+    "error_code", "explanation", "next_action"} — e.g. error_code
+    "forbidden_preexisting_state" means the repository already had
+    unrelated changes before the task started; next_action says exactly
+    what to resolve before retrying. Requires repo_path to be a git
+    repository with .skilllayer/ listed in .gitignore (an untracked
+    .skilllayer/ is otherwise misclassified as an unexpected change).
+    Writes contract.json, baseline.json, ownership.json, and transition
+    records under .skilllayer/tasks/<task_id>/."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_vte_start", repo, started)
+        return repo
+    try:
+        result = _vte.vte_start(
+            repo, title, description=description, allowed_paths=allowed_paths, forbidden_paths=forbidden_paths,
+            scope_mode=scope_mode, allow_new_files=allow_new_files, allow_deleted_files=allow_deleted_files,
+            allow_test_files=allow_test_files, allowed_generated_paths=allowed_generated_paths,
+            max_changed_files=max_changed_files, expected_checks=expected_checks, persist_consent=persist_consent,
+        )
+    except Exception as exc:
+        result = {"status": "ERROR", "task_id": None, "error_code": "unexpected_error", "explanation": str(exc),
+                  "next_action": "Retry; if this persists, inspect the repository manually."}
+    record_mcp_telemetry("skilllayer_vte_start", result, started)
+    return result
+
+
+def skilllayer_vte_status(repo_path: str, task_id: str) -> dict[str, Any]:
+    """Read-only: report a Verified Task Execution task's current state,
+    baseline/scope/resume status, which operations are safe to call next,
+    and any confirmations still pending. Never writes anything.
+
+    Required: repo_path, task_id (returned by skilllayer_vte_start).
+    Returns {"status": "OK", "task_state", "baseline_status",
+    "scope_status", "resume_status", "safe_operations",
+    "prohibited_operations", "confirmations_required", "next_action"}, or
+    {"status": "ERROR", "error_code": "task_not_found", ...} if task_id is
+    unknown."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_vte_status", repo, started)
+        return repo
+    try:
+        result = _vte.vte_status(repo, task_id)
+    except Exception as exc:
+        result = {"status": "ERROR", "task_id": task_id, "error_code": "unexpected_error", "explanation": str(exc),
+                  "next_action": "Retry; if this persists, inspect the repository manually."}
+    record_mcp_telemetry("skilllayer_vte_status", result, started)
+    return result
+
+
+def skilllayer_vte_checkpoint(
+    repo_path: str,
+    task_id: str,
+    task_phase: str,
+    completed_steps: list[str] | None = None,
+    active_step: str | None = None,
+    remaining_steps: list[str] | None = None,
+    files_observed: list[str] | None = None,
+    files_expected_next: list[str] | None = None,
+    interruption_reason: str | None = None,
+) -> dict[str, Any]:
+    """Record one immutable checkpoint for a RUNNING (or VALIDATING) task.
+
+    Required: repo_path, task_id, task_phase (a short label for the current
+    phase, e.g. "writing tests"). completed_steps/remaining_steps are plain
+    string labels — no manual evidence construction or sequence numbers
+    needed, this tool handles that internally.
+
+    Pass interruption_reason instead of a normal checkpoint when work
+    stopped unexpectedly — one of: PROCESS_TERMINATED, HOST_SHUTDOWN,
+    USER_STOPPED, TIME_LIMIT, DEPENDENCY_UNAVAILABLE, TOOL_FAILURE,
+    VALIDATION_FAILURE, UNKNOWN_INTERRUPTION. This moves the task to
+    INTERRUPTED; call skilllayer_vte_resume before continuing.
+
+    Returns {"status": "CHECKPOINTED"|"INTERRUPTED", "task_id",
+    "next_action"}, or {"status": "ERROR", "error_code":
+    "invalid_state_transition", ...} if the task is not currently RUNNING
+    or VALIDATING — call skilllayer_vte_status first if unsure."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_vte_checkpoint", repo, started)
+        return repo
+    try:
+        result = _vte.vte_checkpoint(
+            repo, task_id, task_phase, completed_steps=completed_steps, active_step=active_step,
+            remaining_steps=remaining_steps, files_observed=files_observed, files_expected_next=files_expected_next,
+            interruption_reason=interruption_reason,
+        )
+    except Exception as exc:
+        result = {"status": "ERROR", "task_id": task_id, "error_code": "unexpected_error", "explanation": str(exc),
+                  "next_action": "Retry; if this persists, inspect the repository manually."}
+    record_mcp_telemetry("skilllayer_vte_checkpoint", result, started)
+    return result
+
+
+def skilllayer_vte_resume(
+    repo_path: str,
+    task_id: str,
+    confirmed: bool = False,
+    confirmation_token: str | None = None,
+) -> dict[str, Any]:
+    """Assess whether it is safe to resume an INTERRUPTED (or RESUME_REVIEW)
+    task, and resume it into RUNNING if so.
+
+    Required: repo_path, task_id. Call with no other arguments first: if
+    resuming needs explicit confirmation you get back {"status":
+    "CONFIRMATION_REQUIRED", "plan", "confirmation_token"} — show the user
+    the plan, then call again with confirmed=True and the same
+    confirmation_token (it is single-use and scoped to this exact resume;
+    it cannot be reused or applied to a different task).
+
+    Returns {"status": "RUNNING", "plan", "next_action"} on success,
+    {"status": "BLOCKED", "plan", "next_action"} if resume is unsafe (e.g.
+    the repository changed since the baseline, or another instance holds
+    an active ownership lease), or {"status": "CONFIRMATION_REQUIRED", ...}
+    as above. Never resets Git, stashes, checks out, rebases, or rolls
+    anything back."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_vte_resume", repo, started)
+        return repo
+    try:
+        result = _vte.vte_resume(repo, task_id, confirmed=confirmed, confirmation_token=confirmation_token)
+    except Exception as exc:
+        result = {"status": "ERROR", "task_id": task_id, "error_code": "unexpected_error", "explanation": str(exc),
+                  "next_action": "Retry; if this persists, inspect the repository manually."}
+    record_mcp_telemetry("skilllayer_vte_resume", result, started)
+    return result
+
+
+def skilllayer_vte_finalize(
+    repo_path: str,
+    task_id: str,
+    tests_recorded: bool,
+    tests_passed: bool | None = None,
+    tests_summary_label: str | None = None,
+) -> dict[str, Any]:
+    """Validate scope against the live repository and finalize a task,
+    producing a verification receipt.
+
+    Required: repo_path, task_id, tests_recorded (True only if you actually
+    ran the required tests and observed a definite result — set
+    tests_passed accordingly; leave tests_passed=None if the outcome was
+    inconclusive). Never claim tests_recorded=True without having run the
+    tests: the verdict is derived only from what you report here plus live
+    repository facts, so a false claim is caught by scope/evidence checks,
+    not trusted at face value.
+
+    Returns {"status": "COMPLETED"|"BLOCKED", "receipt", "receipt_text",
+    "next_action"}. receipt["final_verdict"] is one of
+    TASK_VERIFIED_COMPLETE, TASK_COMPLETE_WITH_LIMITATIONS, TASK_INCOMPLETE,
+    TASK_BLOCKED, TASK_FAILED, TASK_ABANDONED. receipt["prevented_actions"]
+    lists any unsafe completion this call itself blocked. status is only
+    ever "COMPLETED" when final_verdict is TASK_VERIFIED_COMPLETE or
+    TASK_COMPLETE_WITH_LIMITATIONS."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_vte_finalize", repo, started)
+        return repo
+    try:
+        result = _vte.vte_finalize(
+            repo, task_id, tests_recorded=tests_recorded, tests_passed=tests_passed,
+            tests_summary_label=tests_summary_label,
+        )
+    except Exception as exc:
+        result = {"status": "ERROR", "task_id": task_id, "error_code": "unexpected_error", "explanation": str(exc),
+                  "next_action": "Retry; if this persists, inspect the repository manually."}
+    record_mcp_telemetry("skilllayer_vte_finalize", result, started)
+    return result
+
+
+def skilllayer_vte_abandon(repo_path: str, task_id: str, reason_label: str) -> dict[str, Any]:
+    """Abandon a Verified Task Execution task from any non-terminal state.
+
+    Use this when the user explicitly wants to stop a task without
+    finishing it — not for a transient interruption (use
+    skilllayer_vte_checkpoint's interruption_reason for that instead).
+
+    Required: repo_path, task_id, reason_label (a short label, e.g. "user
+    cancelled"). Returns {"status": "ABANDONED", "next_action"}, or
+    {"status": "ERROR", ...} if the task is already in a terminal state."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_vte_abandon", repo, started)
+        return repo
+    try:
+        result = _vte.vte_abandon(repo, task_id, reason_label=reason_label)
+    except Exception as exc:
+        result = {"status": "ERROR", "task_id": task_id, "error_code": "unexpected_error", "explanation": str(exc),
+                  "next_action": "Retry; if this persists, inspect the repository manually."}
+    record_mcp_telemetry("skilllayer_vte_abandon", result, started)
+    return result
+
+
 MCP_TOOL_HANDLERS = (
     skilllayer_run, skilllayer_inspect_repo, skilllayer_inspect_repo_structure,
     skilllayer_inspect_runtime, skilllayer_check_port, skilllayer_detect_processes,
@@ -1813,6 +2050,8 @@ MCP_TOOL_HANDLERS = (
     skilllayer_track_decision, skilllayer_remember_preferences, skilllayer_rehydrate_context,
     skilllayer_list_workflows, skilllayer_list_skills, skilllayer_doctor,
     skilllayer_safe_change, skilllayer_release_readiness, skilllayer_resume_work,
+    skilllayer_vte_start, skilllayer_vte_status, skilllayer_vte_checkpoint,
+    skilllayer_vte_resume, skilllayer_vte_finalize, skilllayer_vte_abandon,
 )
 
 

@@ -294,3 +294,24 @@ persisted — every record is small, structured, and schema-bounded.
   rules, no new evidence classification, and no new redaction patterns
   beyond what A/B/C already define — by design, matching the "connect these
   components" brief.
+
+## Milestone E (public product surface) integration
+
+`src/skilllayer/tasks/public_api.py` is the only module built on top of this
+orchestrator without modifying it. It wraps every function here
+(`create_task` through `get_task_status`) into six bounded MCP tools
+(`vte_start`/`vte_status`/`vte_checkpoint`/`vte_resume`/`vte_finalize`/
+`vte_abandon`) that never require a caller to know `owner_instance_id`
+bookkeeping, evidence digests, or sequence numbers exist. One real gap in
+this module was found while building that wrapper: `assess_task_resume` has
+no `owner_instance_id` and therefore cannot apply the D5 self-ownership
+reinterpretation that only `resume_task` performs — a caller gating its own
+control flow on `assess_task_resume`'s raw verdict (as the first version of
+`public_api.vte_resume` did) will reach a different, less-informed
+conclusion than `resume_task` itself reaches a moment later. The fix lives
+entirely in `public_api.py` (see `VERIFIED_TASK_EXECUTION_DECISIONS.md`'s
+E3): always call `resume_task` and react to its actual returned state,
+rather than pre-branching on `assess_task_resume`. See
+[`VERIFIED_TASK_EXECUTION_USER_GUIDE.md`](VERIFIED_TASK_EXECUTION_USER_GUIDE.md)
+and [`VTE_PUBLIC_MCP_API.md`](VTE_PUBLIC_MCP_API.md) for the full public
+surface this orchestrator remains the source of truth for.

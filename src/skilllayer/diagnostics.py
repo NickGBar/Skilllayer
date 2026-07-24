@@ -45,7 +45,10 @@ def build_diagnostics(repo: str | None, doctor: dict[str, Any], *, tool_count: i
         "mcp_configuration": mcp_status,
         "mcp_handshake": {"status": "INCOMPLETE", "observed": "not started by diagnostics"},
         "mcp_tool_count": tool_count,
-        "professional_skills": {"safe_code_change": True, "release_readiness": True, "resume_project_work": True},
+        "professional_skills": {
+            "safe_code_change": True, "release_readiness": True, "resume_project_work": True,
+            "verified_task_execution": True,
+        },
         "selected_project_python": project_python,
         "recent_error_codes": [],
         "uploaded": False,

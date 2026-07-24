@@ -242,3 +242,27 @@ before any write. See
 the full write-up, including the one new small index file
 (`.skilllayer/tasks/.idempotency_index.json`) `create_task` uses for
 idempotent retries.
+
+## Milestone E (public product surface) integration
+
+`src/skilllayer/tasks/public_api.py`, `receipt.py`, and `interventions.py`
+are the only modules a public `skilllayer_vte_*` MCP tool handler ever
+imports from `skilllayer.tasks`. They reuse this module's primitives
+directly (`TaskConsent`/`grant_task_consent`, `atomic_write_json`/
+`memory_lock`, `_resolve_paths_or_blocked`, `sanitize_persisted_value`) for
+their own additional records — `interventions/`, `confirmations/`, and
+per-checkpoint `evidence/checkpoint_claim_<seq>.json` files — with no second
+persistence mechanism, no new redaction patterns, and no changes to this
+module or to Foundation B/C/D's source. Every path is a child of the
+already-validated `task_dir`, with the same per-path symlink checks used
+throughout Foundations B–D.
+
+`persist_consent` is the one new user-facing gate this milestone adds: it is
+checked once, at `vte_start`, before any write; every later `vte_*` call for
+an already-created task reconstructs a `TaskConsent` via
+`grant_task_consent` (the same call-time-assertion pattern Foundation A
+already uses everywhere else) rather than re-prompting. No raw logs, source
+contents, tokens, environment variables, or chain-of-thought are ever
+accepted into an intervention, confirmation, or checkpoint-claim record —
+every field passes through this module's `sanitize_persisted_value` exactly
+as it does for Foundation A's own contract/result fields.

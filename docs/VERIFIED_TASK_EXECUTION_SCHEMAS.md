@@ -139,3 +139,62 @@ repeated call can return it byte-identical rather than reconstructing it from
 `final_verdict` is one of `TASK_VERIFIED_COMPLETE`,
 `TASK_COMPLETE_WITH_LIMITATIONS`, `TASK_INCOMPLETE`, `TASK_BLOCKED`,
 `TASK_FAILED`, `TASK_ABANDONED`.
+
+## Milestone E intervention record (schema version 1)
+
+`.skilllayer/tasks/<task-id>/interventions/<intervention-id>.json`, one
+immutable file per prevented action:
+
+```json
+{
+  "schema_version": 1,
+  "intervention_id": "iv-3d6c5893d67d9c89",
+  "task_id": "20260724T105526Z-false-completion-test-43d2c089",
+  "timestamp": "2026-07-24T10:55:27Z",
+  "intervention_type": "FALSE_COMPLETION_PREVENTED",
+  "operation": "vte_finalize",
+  "rule": "finalize_task requires recorded test evidence before completion.",
+  "observed_condition": "tests_recorded=False, tests_passed=None",
+  "prevented_outcome": "Finalization was blocked; the task was not marked complete.",
+  "user_action_required": "Rerun the required tests and call vte_finalize again with tests_recorded=True and a definite tests_passed value.",
+  "evidence_refs": []
+}
+```
+
+`intervention_type` is one of `OUT_OF_SCOPE_CHANGE`, `FORBIDDEN_PATH_CHANGE`,
+`FALSE_COMPLETION_PREVENTED`, `STALE_RESUME_BLOCKED`, `UNKNOWN_TEST_RESULT`,
+`OWNERSHIP_CONFLICT`, `INCOMPLETE_EVIDENCE`, `SCOPE_AMENDMENT_REQUIRED`.
+Written only when an operation was actually blocked — never speculatively.
+
+## Milestone E confirmation record (schema version 1)
+
+`.skilllayer/tasks/<task-id>/confirmations/<confirmation-id>.json` — mutated
+exactly once, from `consumed: false` to `consumed: true`:
+
+```json
+{
+  "schema_version": 1,
+  "confirmation_id": "cf-2b7e985ea3dfb6e6",
+  "task_id": "20260724T105607Z-interrupted-task-test-07104c39",
+  "created_at": "2026-07-24T11:06:10Z",
+  "reason": "['active_task_owner_matches_caller_reinterpreted_by_orchestrator']",
+  "scope": "resume",
+  "operation_after_confirmation": "vte_resume",
+  "consumed": false,
+  "consumed_at": null
+}
+```
+
+A token is scoped to one `task_id` and one `scope` (e.g. `"resume"`),
+single-use (checked and flipped atomically under the same project-wide
+memory lock every other write uses), and non-transferable: a token issued
+for one task is rejected for a different `task_id`, and a token issued for
+one `scope` is rejected if presented for a different operation's scope.
+
+## Milestone E verification receipt (schema version 1)
+
+Not persisted as its own file — assembled on demand by
+`skilllayer.tasks.receipt.build_receipt` from the records above plus
+`get_task_status`. See
+[VTE_VERIFICATION_RECEIPT.md](VTE_VERIFICATION_RECEIPT.md) for the full
+field-by-field reference.

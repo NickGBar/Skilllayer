@@ -148,9 +148,9 @@ class TestMcpSchemas:
             assert tool_name in names
 
     def test_schema_count_reflects_removal(self):
-        # 41 registered (38 original + 3 professional skill packs), minus the
-        # 2 disabled (internal) tools.
-        assert len(list_tool_schemas()["tools"]) == 39
+        # 45 registered (38 original + 3 professional skill packs + 6 VTE
+        # public tools from Milestone E), minus the 2 disabled (internal) tools.
+        assert len(list_tool_schemas()["tools"]) == 45
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +191,7 @@ class TestMcpServerRegistration:
 
         mcp_server_module.create_mcp_server()
 
-        assert len(fake_server.registered) == 39
+        assert len(fake_server.registered) == 45
 
 
 # ---------------------------------------------------------------------------
