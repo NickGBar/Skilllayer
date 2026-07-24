@@ -96,3 +96,11 @@ task workflow, route requests, or expose MCP tools.
 Foundation C may consume this factual result for a read-only resume assessment.
 It does not change Foundation B matching or scope verdict semantics: stale,
 violated, or incomplete scope evidence prevents unconditional safe resume.
+
+Foundation D's orchestrator calls `validate_scope` fresh (never cached) at
+`start_task`, `validate_task`, and `finalize_task` — a stale or violated
+verdict blocks the corresponding lifecycle transition rather than being
+inferred from an earlier check. It does not change Foundation B's matching or
+verdict semantics either. Note for callers: there is no glob (`**`) support —
+`EXPLICIT` mode requires exact file paths and `PREFIX` mode requires a
+directory entry ending in `/`; a glob-style entry simply never matches.

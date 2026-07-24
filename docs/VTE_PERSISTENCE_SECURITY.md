@@ -225,3 +225,20 @@ Reading never repairs or rewrites what it finds, however malformed:
   defense-in-depth, not a certification.
 - **No public workflow, routing, or MCP tool** — this module is intentionally
   unreachable from chat until a later milestone deliberately wires it up.
+
+## Foundation D (orchestrator) integration
+
+`src/skilllayer/tasks/orchestrator.py` reuses every primitive documented
+above directly — `TaskConsent`, `atomic_write_json`/`memory_lock`, path
+confinement, and `sanitize_persisted_value`/`_contains_rejected_secret` — for
+its own additional on-disk records (`state.json`, `transitions/`,
+`evidence/`). It introduces no second persistence or locking mechanism, no
+new redaction patterns, and no changes to this module. All Foundation D
+paths are computed as children of the already symlink-checked `task_dir`
+this module returns from `task_record_paths`, with the same additional
+per-path symlink checks Foundation C's `checkpoints_dir` already established
+before any write. See
+[`VTE_FOUNDATION_D_ORCHESTRATOR.md`](VTE_FOUNDATION_D_ORCHESTRATOR.md) for
+the full write-up, including the one new small index file
+(`.skilllayer/tasks/.idempotency_index.json`) `create_task` uses for
+idempotent retries.

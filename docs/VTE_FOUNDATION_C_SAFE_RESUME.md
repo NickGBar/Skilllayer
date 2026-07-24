@@ -50,3 +50,19 @@ Foundation A's old latest-only `checkpoint.json` is recognised as legacy and
 requires a new Foundation C checkpoint; it is never silently reinterpreted.
 Foundation C does not prove authorship, execute plans, repair stale records,
 or replace a user’s Git workflow.
+
+## Foundation D integration
+
+Foundation D's orchestrator calls `assess_resume` fresh on every
+`resume_task` call — never cached, never skipped, and never bypassed by a
+direct state transition (there is no orchestrator path from `INTERRUPTED` to
+`RUNNING` other than through it). One reinterpretation happens at the
+orchestrator layer, not inside this module: `assess_resume` has no
+`owner_instance_id` parameter, so it blocks on *any* active lease, including
+the caller's own. When `resume_task` has already independently verified the
+caller holds that lease and the assessment's only objection is
+`active_task_owner`, the orchestrator treats this as requiring the same
+confirmation any other non-trivially-safe resume needs, rather than as a
+hard block — the raw assessment is preserved and returned unmodified for
+every other reason. See `VTE_FOUNDATION_D_ORCHESTRATOR.md` for the full
+lifecycle this checkpoint/resume/ownership API is composed into.
