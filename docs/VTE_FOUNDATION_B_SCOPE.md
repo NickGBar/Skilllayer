@@ -92,3 +92,7 @@ Git state and selected content fingerprints establish factual comparison, not
 authorship. Concurrent user edits can make attribution uncertain. Foundation B
 does not execute validation, change user files, offer rollback, create a public
 task workflow, route requests, or expose MCP tools.
+
+Foundation C may consume this factual result for a read-only resume assessment.
+It does not change Foundation B matching or scope verdict semantics: stale,
+violated, or incomplete scope evidence prevents unconditional safe resume.

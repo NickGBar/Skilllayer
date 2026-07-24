@@ -189,6 +189,8 @@ class TaskRecordPaths:
     amendments_path: Path
     result_path: Path
     checkpoint_path: Path
+    checkpoints_dir: Path
+    ownership_path: Path
 
 
 class TaskPathSafetyError(ValueError):
@@ -235,6 +237,8 @@ def task_record_paths(project_root: Path, task_id: str) -> TaskRecordPaths:
         amendments_path=task_dir / "scope_amendments.json",
         result_path=task_dir / "result.json",
         checkpoint_path=task_dir / "checkpoint.json",
+        checkpoints_dir=task_dir / "checkpoints",
+        ownership_path=task_dir / "ownership.json",
     )
 
 
@@ -570,7 +574,7 @@ def _git_head(project_root: Path) -> str | None:
 # Consent
 # ---------------------------------------------------------------------------
 
-DEFAULT_DECLARED_RECORD_TYPES = frozenset({"contract", "baseline", "amendment", "result", "checkpoint"})
+DEFAULT_DECLARED_RECORD_TYPES = frozenset({"contract", "baseline", "amendment", "result", "checkpoint", "ownership"})
 
 
 @dataclass(frozen=True)

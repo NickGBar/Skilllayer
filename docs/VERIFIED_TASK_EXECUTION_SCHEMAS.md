@@ -39,3 +39,22 @@ or an attribution claim.
 `amendments` list. Each record has `amendment_id`, `approved_at`,
 `added_allowed_paths`, `added_generated_paths`, `reason_label`, and
 `consent_reference`.
+
+## Foundation C checkpoint (schema version 1)
+
+Immutable history records contain:
+
+```text
+schema_version, checkpoint_id, task_id, created_at, sequence,
+previous_checkpoint_id, task_phase, task_status, completed_steps, active_step,
+remaining_steps, blocked_steps, evidence_refs, repository_state_ref,
+contract_ref, baseline_ref, scope_validation_ref, commands_attempted,
+validations_attempted, files_observed, files_expected_next,
+unresolved_questions, known_failures, limitations, resume_requirements,
+interruption, integrity_fingerprint
+```
+
+The complete record is integrity-fingerprinted except its own fingerprint
+field. Historical records are append-only; `checkpoint.json` is an atomic
+pointer to the latest valid history record. Source contents, raw logs, prompts,
+environment variables, and credentials are not part of this schema.
