@@ -194,7 +194,19 @@ dependency mapping, secret scanning, dead-code detection, todo/decision
 tracking, and more. Current code registers 47 workflows: 41 `stable` and 6
 `internal`. The authoritative inventory is `skilllayer workflows --json`; it
 includes each workflow’s stability and write behavior. MCP currently exposes
-45 tools (39 general-purpose tools plus 6 Verified Task Execution tools); the
-runtime tool list is authoritative and can change with the installed version.
-Use `skilllayer_list_skills` for the full professional skill catalog,
-including Verified Task Execution.
+49 tools (39 general-purpose tools, 6 Verified Task Execution tools, and 4
+Skill Opportunity Audit tools); the runtime tool list is authoritative and
+can change with the installed version. Use `skilllayer_list_skills` for the
+full professional skill catalog, including Verified Task Execution.
+
+### Skill Opportunity Audit
+
+SkillLayer never forces its own tools to be used. To learn whether that's
+working without contaminating the experiment, an optional local audit
+(`skilllayer_audit_*`) can record which capabilities a session actually
+used, which were plausibly applicable but skipped, and what ordinary
+actions duplicated SkillLayer functionality by hand — all from bounded,
+normalized-enum observations, never by inspecting arbitrary activity. It
+never invokes a skill, never blocks a tool, and stays in-memory unless you
+explicitly ask it to persist. See
+[docs/SKILL_OPPORTUNITY_AUDIT.md](docs/SKILL_OPPORTUNITY_AUDIT.md).

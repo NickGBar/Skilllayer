@@ -513,6 +513,9 @@ class TestMcpIntegration:
         assert "Verified Task Report" in result["human_report_markdown"]
 
     def test_tool_count_unchanged_by_milestone_f(self):
+        # Milestone F itself added 0 tools (45 before and after F); the
+        # absolute count below also reflects Milestone G's 4 audit tools
+        # added later (45 + 4 = 49), same as the other tool-count assertions.
         from skilllayer.mcp_server import mcp_tool_count
 
-        assert mcp_tool_count() == 45
+        assert mcp_tool_count() == 49
