@@ -236,3 +236,58 @@ Milestone E receipt (`receipt_version: 1`):
 `BLOCKED`, `FAILED`, `ABANDONED`, `UNKNOWN`. See
 [VTE_HUMAN_REPORT.md](VTE_HUMAN_REPORT.md) for the full deterministic
 mapping, the Markdown format, and persistence semantics.
+
+## Product G skill opportunity event (schema version 1, in-memory)
+
+Not written to disk by default — held only in `skill_audit._SESSIONS` for
+the life of the process, one entry per classified capability:
+
+```json
+{
+  "capability_id": "VERIFIED_TASK_EXECUTION",
+  "capability_category": "Verified Task Execution",
+  "classification": "APPLICABLE_BUT_SKIPPED",
+  "confidence": "HIGH",
+  "evidence_codes": ["tests_run_without_vte"],
+  "observed_operations": ["FILE_EDIT", "TEST_RUN"],
+  "related_skilllayer_calls": [],
+  "manual_equivalent_operations": ["FILE_EDIT + GIT_DIFF + TEST_RUN without any vte_* call"],
+  "reason": "Repository files changed with strong completion signals but no VTE call was observed.",
+  "limitations": []
+}
+```
+
+`classification` is one of `USED`, `APPLICABLE_AND_USED`,
+`APPLICABLE_BUT_SKIPPED`, `POSSIBLY_APPLICABLE`, `NOT_APPLICABLE`,
+`CAPABILITY_MISSING`, `UNKNOWN`. `confidence` is `HIGH`/`MEDIUM`/`LOW`;
+only `HIGH` may ever pair with `APPLICABLE_BUT_SKIPPED`.
+
+## Product G session adoption report (schema version 1)
+
+`.skilllayer/session-audits/<session-id>/adoption-report.json` (persisted
+only with explicit consent):
+
+```json
+{
+  "report_version": 1,
+  "session_id": "20260728T072254Z-433903f4",
+  "project_fingerprint": null,
+  "observed_period": {"started_at": "2026-07-28T07:22:54Z", "reported_at": "2026-07-28T07:23:01Z"},
+  "capabilities_used": [{"capability_id": "DECISION_TRACKING", "classification": "USED"}],
+  "opportunities_detected": ["... one skill opportunity event per capability ..."],
+  "applicable_but_skipped": [],
+  "possibly_applicable": [],
+  "manual_reinventions": [],
+  "missing_capabilities": [],
+  "false_positive_risks": [],
+  "recommendations": [],
+  "evidence_complete": true,
+  "created_at": "2026-07-28T07:23:01Z"
+}
+```
+
+`recommendations` is always length 0 or 1 — never more. `opportunities.json`
+(sibling file) holds the same `opportunities_detected` list independently,
+written once alongside the report. See
+[SKILL_OPPORTUNITY_AUDIT.md](SKILL_OPPORTUNITY_AUDIT.md) for the full
+capability registry, classification rules, and mode reference.

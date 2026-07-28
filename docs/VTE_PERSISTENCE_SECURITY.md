@@ -284,3 +284,27 @@ report contamination), and the rendered Markdown is capped at 8,000
 characters (`human_report.MAX_MARKDOWN_CHARS`) as a deterministic backstop
 against an unbounded document, independent of the per-field list bounds
 already applied when the report model is built.
+
+## Product G (skill opportunity audit) integration
+
+`src/skilllayer/tasks/skill_audit.py` is a sibling of the `tasks/` VTE
+modules, not built on top of them — it never imports `orchestrator.py` or
+`public_api.py`, and it never inspects arbitrary agent activity. It only
+accepts explicit, bounded, normalized-enum observations
+(`record_operation`/`record_skilllayer_call`), each validated against a
+small per-operation attribute allowlist and passed through this module's
+`sanitize_persisted_value` exactly as every other VTE record is — so a
+secret or an absolute private path in an attribute value is rejected
+outright, the same guarantee `create_task_contract`'s fields already have.
+Default state is in-memory only (module-level, bounded to 500 operations
+and 200 SkillLayer calls per session, with excess explicitly reported as
+truncated rather than silently dropped) — nothing touches disk until
+`write_session_audit` is called with both `persist_report=True` and valid
+consent. That writer reuses `TaskConsent`/`atomic_write_json`/`memory_lock`
+directly, confines every path under
+`.skilllayer/session-audits/<session-id>/` with the same symlink checks
+used throughout Foundations A-D, and applies both idempotent-retry and
+explicit-conflict-rejection semantics identical to Milestone F's
+`write_human_report`. Nothing here ever sends data over the network or
+runs as a background process — persistence, when requested, is a single
+synchronous local write.

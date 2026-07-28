@@ -194,3 +194,31 @@
   truncated from the raw end of the string, which could (rarely, but
   possibly) cut into the required Verdict section for a sufficiently large
   report.
+
+## Product G — Finalized Decisions (Implemented)
+
+> Records decisions made building `skilllayer.tasks.skill_audit` (the Skill
+> Opportunity and Adoption Audit), a purely observational product built
+> alongside VTE, not on top of it — it never calls into
+> `orchestrator.py`/`public_api.py` and never inspects arbitrary agent
+> activity, only what the host explicitly reports.
+
+| # | Decision | Chosen option | Alternatives | Reason | Revisit when |
+|---|----------|---------------|--------------|--------|--------------|
+| G1 | `session_id` shape accepts the codebase's own uppercase `T`/`Z` ISO-timestamp convention | `_SESSION_ID_RE = ^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$` (case-insensitive-safe) | An all-lowercase pattern matching Foundation A's `task_id` charset | **Found via testing**: `new_session_id()` generates `<YYYYMMDDTHHMMSSZ>-<hex>` (matching `task_id`'s own timestamp convention exactly), but the first version of the validation regex only permitted lowercase — every auto-generated session_id failed its own module's validator on the very first call | Never |
+| G2 | Only five capabilities get a deterministic applicability rule; every other registered capability only ever classifies as `USED` or `UNKNOWN` | `_classify_simple_usage` is the fallback for capabilities without a defined rule (Decision Tracking, Context Save/Resume, Todo Management, Release Readiness, Safe Code Change) — it never returns `APPLICABLE_BUT_SKIPPED` or `POSSIBLY_APPLICABLE` | Write a rule for every capability so all ten produce a full classification spectrum | The milestone's own section 6 only specifies rules for five capabilities; inventing a rule for the rest would mean guessing at applicability signals never asked for, directly risking the explicit instruction "Never describe POSSIBLY_APPLICABLE as a confirmed missed opportunity" by fabricating confidence where none was designed | The milestone (or a later one) defines applicability signals for a currently-simple capability |
+| G3 | `record_operation`'s `attributes` are a small, per-operation *allowlist* of keys, each value passed through Foundation A's own `sanitize_persisted_value` | Every operation class in `_OPERATION_ATTRIBUTE_POLICY` declares its own bounded key set (e.g. `FILE_EDIT` accepts only `path`/`is_production_logic`); an unlisted key is rejected outright | Accept an arbitrary `dict[str, str]` and rely on scanning every value for secrets after the fact | The milestone explicitly requires "record_operation must accept normalized enums, not arbitrary logs" and forbids raw command output/prompts/source contents; an allowlist makes the "no free text channel" guarantee structural rather than a best-effort post-hoc scan, and reuses the exact same gate every other VTE record already trusts | Never |
+| G4 | `record_skilllayer_call`'s `tool_name` must be a name already present in `CAPABILITY_REGISTRY`'s `related_mcp_tools` | An unrecognized tool name is rejected (`tool_name_unknown`) rather than accepted as evidence of adoption | Accept any string as a tool name | A typo'd or invented tool name silently accepted as "used" would corrupt the very adoption signal this product exists to measure — a capability could appear `APPLICABLE_AND_USED` when the call it hinges on was never real | A tool is added to `MCP_TOOL_HANDLERS` but not yet reflected in the registry |
+| G5 | The public MCP surface folds `record_operation`/`record_skilllayer_call` into one tool (`skilllayer_audit_record_operation`), gated by which of `operation`/`skilllayer_tool_name` is supplied | Exactly one of the two parameters is required per call; supplying both or neither is rejected explicitly | Register a second MCP tool (`skilllayer_audit_record_skilllayer_call`) mirroring the internal API one-to-one | The milestone's own "Preferred tools" list names exactly three required tools (plus one optional); the internal module keeps the two recording functions separate since they validate against different allowlists (`OPERATION_CLASSES` vs. `_KNOWN_MCP_TOOLS`), but the public surface doesn't need a second tool to preserve that distinction | Never |
+| G6 | `skilllayer_audit_status`'s MCP handler calls a new public `skill_audit.get_session_summary`, not the module's private `_get_session_or_error` | Added `get_session_summary(session_id)` returning only the bounded counts a status view needs | Import and call the underscore-prefixed helper directly from `mcp_server.py` | Every other cross-module call from `mcp_server.py` into `tasks/` goes through a public, no-underscore function (`_vte.vte_start`, etc.); reaching into a private helper from a different top-level module (not a `tasks/` sibling) would be a new, undocumented exception to that convention for no real benefit, since a two-line public wrapper costs nothing | Never |
+
+## Product G risks resolved during verification (not merely designed)
+
+- **G1** is the same class of bug as Foundation D's D1/D2 and Milestone F's
+  F1: a real, running-code test caught a self-inconsistency between a
+  generator and its own validator that a design review would likely have
+  missed, since both pieces individually "looked right" in isolation.
+- **G4** was verified directly with a dedicated adversarial test
+  (`test_unknown_tool_name_rejected`) rather than assumed from the code —
+  confirming a fabricated tool name cannot silently inflate an adoption
+  metric.

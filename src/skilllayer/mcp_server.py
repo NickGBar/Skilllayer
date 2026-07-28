@@ -19,6 +19,7 @@ from .security import blocked_workflow_reason, workflow_execution_blocked
 from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
 from .session_usage import build_session_usage_artifacts
 from .tasks import public_api as _vte
+from .tasks import skill_audit as _audit
 from .telemetry import automatic_telemetry_enabled, record_tool_invocation, tool_telemetry_paths
 from .tools import inspect_repo
 
@@ -2051,6 +2052,157 @@ def skilllayer_vte_abandon(repo_path: str, task_id: str, reason_label: str) -> d
     return result
 
 
+def skilllayer_audit_record_operation(
+    repo_path: str,
+    session_id: str,
+    operation: str | None = None,
+    attributes: dict[str, Any] | None = None,
+    skilllayer_tool_name: str | None = None,
+    mode: str = "NATURAL_DOGFOOD",
+) -> dict[str, Any]:
+    """Record one bounded, normalized observation for a Skill Opportunity
+    Audit session (Product G). Never invokes a skill, never blocks an
+    ordinary tool, never sends telemetry — purely local bookkeeping the
+    host explicitly chooses to report.
+
+    Auto-starts the session in `mode` ("NATURAL_DOGFOOD" or "ASSISTED") on
+    first call for a given session_id; later calls reuse the same session
+    and ignore `mode`. Pass exactly one of:
+    - `operation`: one of FILE_EDIT, FILE_CREATE, FILE_DELETE, GIT_STATUS,
+      GIT_DIFF, GIT_LOG, TEST_RUN, SECRET_REVIEW, REMOTE_JOB_SUBMIT,
+      REMOTE_JOB_POLL, CONTEXT_RESTORE, DECISION_RECORD, TODO_UPDATE,
+      RELEASE_ACTION — an ordinary action the host took, with a small
+      allowlisted `attributes` dict (e.g. {"is_production_logic": true}).
+    - `skilllayer_tool_name`: the exact name of a real SkillLayer MCP tool
+      that was actually called (e.g. "skilllayer_vte_start").
+
+    Never accepts an unrestricted shell transcript or free-form log: every
+    attribute value passes through the same redaction/rejection gate VTE
+    uses, so a secret or an absolute private path is rejected outright.
+
+    Returns {"success": bool, "session_id", "recorded": bool, "error"?}."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_audit_record_operation", repo, started)
+        return repo
+    try:
+        _audit.start_session(session_id, mode=mode)
+        if (operation is None) == (skilllayer_tool_name is None):
+            result = {"success": False, "error": "exactly_one_of_operation_or_skilllayer_tool_name_required", "session_id": session_id}
+        elif operation is not None:
+            result = _audit.record_operation(session_id, operation, attributes)
+        else:
+            result = _audit.record_skilllayer_call(session_id, skilllayer_tool_name, attributes)
+    except Exception as exc:
+        result = {"success": False, "error": "unexpected_error", "session_id": session_id, "detail": str(exc)}
+    record_mcp_telemetry("skilllayer_audit_record_operation", result, started)
+    return result
+
+
+def skilllayer_audit_session(repo_path: str, session_id: str, persist_report: bool = False) -> dict[str, Any]:
+    """Build the deterministic Skill Opportunity Audit report for a session:
+    which capabilities were used, which were plausibly applicable but
+    skipped, which had no capability at all, and what ordinary actions
+    duplicated SkillLayer functionality by hand. Never invented by an LLM —
+    every line is a fixed template keyed by a verified rule, or a direct
+    count of what was actually recorded via
+    skilllayer_audit_record_operation.
+
+    Required: repo_path, session_id. persist_report (default False) writes
+    report.json/report.md/opportunities.json under
+    .skilllayer/session-audits/<session_id>/ — off by default, matching
+    this product's in-memory-only default.
+
+    Returns {"success": true, "report", "human_report_markdown",
+    "recommendation" (string or null — exactly one or none),
+    "evidence_limitations", "report_paths"}."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_audit_session", repo, started)
+        return repo
+    try:
+        built = _audit.build_session_adoption_report(session_id)
+        if not built.get("success"):
+            result = {"success": False, "error": built.get("error", "session_not_found"), "session_id": session_id}
+        else:
+            report = built["report"]
+            markdown = _audit.render_session_adoption_report(report)
+            report_paths: list[str] = []
+            if persist_report:
+                from .tasks.persistence import grant_task_consent
+
+                classified = _audit.classify_opportunities(session_id)
+                consent = grant_task_consent(repo, session_id)
+                written = _audit.write_session_audit(
+                    repo, session_id, consent=consent, report=report, markdown=markdown,
+                    opportunities=classified.get("events") if classified.get("success") else None,
+                )
+                if not written.get("success"):
+                    result = {"success": False, "error": written.get("error"), "session_id": session_id}
+                    record_mcp_telemetry("skilllayer_audit_session", result, started)
+                    return result
+                report_paths = written.get("written_paths", [])
+            result = {
+                "success": True, "session_id": session_id, "report": report, "human_report_markdown": markdown,
+                "recommendation": report["recommendations"][0] if report["recommendations"] else None,
+                "evidence_limitations": report["false_positive_risks"], "report_paths": report_paths,
+            }
+    except Exception as exc:
+        result = {"success": False, "error": "unexpected_error", "session_id": session_id, "detail": str(exc)}
+    record_mcp_telemetry("skilllayer_audit_session", result, started)
+    return result
+
+
+def skilllayer_audit_status(repo_path: str, session_id: str) -> dict[str, Any]:
+    """Read-only: report how many operations/SkillLayer calls have been
+    recorded for a session so far, and whether a persisted report already
+    exists. Never writes anything, never builds a report.
+
+    Returns {"success": true, "session_id", "mode", "operations_recorded",
+    "skilllayer_calls_recorded", "persisted_report_exists"}, or
+    {"success": false, "error": "session_not_found"}."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_audit_status", repo, started)
+        return repo
+    try:
+        summary = _audit.get_session_summary(session_id)
+        if not summary.get("success"):
+            result = {"success": False, "error": summary.get("error", "session_not_found"), "session_id": session_id}
+        else:
+            persisted = _audit.read_session_audit(repo, session_id) is not None
+            result = {
+                "success": True, "session_id": session_id, "mode": summary["mode"],
+                "operations_recorded": summary["operations_recorded"], "skilllayer_calls_recorded": summary["skilllayer_calls_recorded"],
+                "persisted_report_exists": persisted,
+            }
+    except Exception as exc:
+        result = {"success": False, "error": "unexpected_error", "session_id": session_id, "detail": str(exc)}
+    record_mcp_telemetry("skilllayer_audit_status", result, started)
+    return result
+
+
+def skilllayer_audit_reset(repo_path: str, session_id: str) -> dict[str, Any]:
+    """Clear one audit session's in-memory observations (scoped to exactly
+    this session_id only). Never deletes a persisted report on disk.
+
+    Returns {"success": true, "session_id", "existed"}."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_audit_reset", repo, started)
+        return repo
+    try:
+        result = _audit.reset_session(session_id)
+    except Exception as exc:
+        result = {"success": False, "error": "unexpected_error", "session_id": session_id, "detail": str(exc)}
+    record_mcp_telemetry("skilllayer_audit_reset", result, started)
+    return result
+
+
 MCP_TOOL_HANDLERS = (
     skilllayer_run, skilllayer_inspect_repo, skilllayer_inspect_repo_structure,
     skilllayer_inspect_runtime, skilllayer_check_port, skilllayer_detect_processes,
@@ -2067,6 +2219,8 @@ MCP_TOOL_HANDLERS = (
     skilllayer_safe_change, skilllayer_release_readiness, skilllayer_resume_work,
     skilllayer_vte_start, skilllayer_vte_status, skilllayer_vte_checkpoint,
     skilllayer_vte_resume, skilllayer_vte_finalize, skilllayer_vte_abandon,
+    skilllayer_audit_record_operation, skilllayer_audit_session,
+    skilllayer_audit_status, skilllayer_audit_reset,
 )
 
 
