@@ -973,3 +973,57 @@ SAFE_CODE_CHANGE_SKILL = {
         "intended for broad, multi-area refactors.",
     ],
 }
+
+# Skills v0.1, part B: the first genuine composition — no primitive here is new,
+# only the aggregation. Mirrors RELEASE_READINESS_SKILL's shape exactly.
+
+CODEBASE_HEALTH_SKILL = {
+    "name": "codebase_health",
+    "purpose": (
+        "Aggregate existing read-only SkillLayer analyses — a merge-conflict "
+        "scan, a dead-code scan, and dependency inspection — into one bounded "
+        "codebase-health verdict. Never certifies a codebase as clean; any "
+        "incomplete or skipped check reduces the verdict rather than becoming "
+        "a false HEALTHY."
+    ),
+    "activation_examples": [
+        "is this codebase healthy to build on",
+        "check this repository for dead code and merge conflicts",
+        "assess the architecture health of this project",
+        "what shape is this part of the codebase in",
+    ],
+    "non_activation_examples": [
+        "is this repository ready to release",
+        "review the change I just made",
+        "fix this specific bug",
+        "explain what this function does",
+    ],
+    "required_mcp_tools": ["skilllayer_codebase_health"],
+    "supported_modes": ["bounded", "deep"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Never certifies a codebase as clean or free of unused code.",
+        "Any incomplete or skipped check reduces the verdict (to "
+        "INCOMPLETE_ASSESSMENT) rather than being silently treated as healthy.",
+        "Bounded by default (mode='bounded'): dependency hygiene (which "
+        "manifests exist, what's unpinned) is checked, but staleness against "
+        "published releases is not — that runs only when mode='deep' is "
+        "requested explicitly, since it means a network round-trip per "
+        "dependency.",
+        "Read-only; never edits, deletes, or renames anything it finds.",
+    ],
+    "known_limitations": [
+        "Dead-code detection is regex-based static analysis, not a real "
+        "Python parser — a private symbol with zero other references is "
+        "flagged 'certain', a public one only 'possible' (it could be "
+        "external API), and dynamic access (getattr, reflection) can hide a "
+        "real reference from it entirely.",
+        "Merge-conflict detection is a literal marker scan; it cannot tell a "
+        "genuine unresolved conflict from marker text that happens to appear "
+        "in a file for another reason.",
+        "Overlaps with release_readiness on dependency inspection by design "
+        "— they answer different questions (\"can we ship\" vs. \"should we "
+        "build here\") from some of the same underlying facts, not a "
+        "duplicated capability.",
+    ],
+}

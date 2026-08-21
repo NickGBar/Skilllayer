@@ -18,14 +18,17 @@ REQUIRED_FIELDS = (
 
 
 class TestCatalogMembership:
-    def test_three_skills_registered(self):
+    def test_four_skills_registered(self):
         names = {s["name"] for s in skilllayer_list_skills()["professional_skills"]}
-        assert names == {"verified_task_execution", "release_readiness", "safe_code_change"}
+        assert names == {
+            "verified_task_execution", "release_readiness", "safe_code_change", "codebase_health",
+        }
 
-    def test_registration_added_no_new_mcp_tools(self):
-        # Skills v0.1 part A is discovery metadata only — registering two
-        # already-implemented workflows must not change the tool surface.
-        assert mcp_tool_count() == 49
+    def test_registration_added_exactly_one_new_mcp_tool(self):
+        # Part A (release_readiness, safe_code_change) was discovery metadata
+        # only. Part B adds codebase_health, a genuinely new tool composing
+        # existing primitives — one new MCP tool, not new primitives.
+        assert mcp_tool_count() == 50
 
 
 class TestCatalogShape:
@@ -47,13 +50,22 @@ class TestCatalogShape:
         assert entry["required_mcp_tools"] == ["skilllayer_safe_change"]
         assert entry["supported_lifecycle"] == ["plan", "validate"]
 
-    def test_non_activation_examples_cross_reference_the_other_skill(self):
+    def test_codebase_health_has_required_fields(self):
+        entry = self._entry("codebase_health")
+        for field in REQUIRED_FIELDS:
+            assert field in entry, f"missing {field}"
+        assert entry["required_mcp_tools"] == ["skilllayer_codebase_health"]
+        assert entry["supported_modes"] == ["bounded", "deep"]
+
+    def test_non_activation_examples_cross_reference_the_other_skills(self):
         # Each skill's own "don't pick me for this" list should include the
-        # other's territory — the whole point of a catalog is telling them apart.
+        # others' territory — the whole point of a catalog is telling them apart.
         readiness = self._entry("release_readiness")
         change = self._entry("safe_code_change")
+        health = self._entry("codebase_health")
         assert any("change" in ex.lower() for ex in readiness["non_activation_examples"])
         assert any("release" in ex.lower() for ex in change["non_activation_examples"])
+        assert any("release" in ex.lower() for ex in health["non_activation_examples"])
 
 
 class TestNoRuntimeChange:
@@ -70,3 +82,10 @@ class TestNoRuntimeChange:
         result = skilllayer_safe_change(str(tmp_path), "fix something", phase="plan")
         assert "verdict" in result
         assert result["skill"] == "safe_code_change"
+
+    def test_codebase_health_tool_returns_its_own_verdict_shape(self, tmp_path):
+        from skilllayer.mcp_server import skilllayer_codebase_health
+
+        result = skilllayer_codebase_health(str(tmp_path))
+        assert "verdict" in result
+        assert result["skill"] == "codebase_health"

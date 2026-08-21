@@ -8189,6 +8189,126 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
     }
 
 
+def build_codebase_health_artifacts(repo: Path, *, deep: bool = False) -> dict[str, Any]:
+    """Aggregate existing read-only SkillLayer analyses into one bounded codebase-health
+    verdict: unresolved merge conflicts, potentially unused code, and dependency
+    hygiene/staleness. Never certifies a codebase as clean; an incomplete check always
+    reduces confidence rather than becoming success — same discipline as
+    build_release_readiness_artifacts, which this deliberately mirrors field-for-field
+    (checks_requested/completed/incomplete, findings, blockers, bounded verdict).
+
+    Bounded by default (deep=False): dependency *hygiene* (map_dependencies — local
+    manifest files only) runs, but dependency *staleness* (watch_deps — hits package
+    registries over the network) does not, the same split release_readiness makes
+    between detecting a test command and actually running it. Pass deep=True to check
+    staleness too."""
+    checks_requested = [
+        "merge_conflict_scan", "dead_code_scan", "dependency_inspection", "dependency_staleness",
+    ]
+    checks_completed: list[str] = []
+    checks_incomplete: list[dict[str, str]] = []
+    findings: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    warnings: list[str] = []
+
+    conflict_artifacts = build_find_conflicts_artifacts(repo)
+    checks_completed.append("merge_conflict_scan")
+    conflict_status = {
+        "total_files_with_conflicts": conflict_artifacts.get("total_files_with_conflicts", 0),
+        "total_conflict_sections": conflict_artifacts.get("total_conflict_sections", 0),
+        "clean": conflict_artifacts.get("clean", True),
+    }
+    for conflict in conflict_artifacts.get("conflicts", []) or []:
+        findings.append({
+            "check": "merge_conflict_scan", "severity": "blocker",
+            "file": conflict.get("file"), "conflict_count": conflict.get("conflict_count"),
+        })
+    if not conflict_artifacts.get("clean", True):
+        blockers.append(
+            f"{conflict_status['total_files_with_conflicts']} file(s) have unresolved "
+            "merge conflict markers."
+        )
+
+    dead_code_artifacts = build_detect_dead_code_artifacts(repo)
+    checks_completed.append("dead_code_scan")
+    dead_code_status = {
+        "files_scanned": dead_code_artifacts.get("files_scanned", 0),
+        "certain_count": dead_code_artifacts.get("certain_count", 0),
+        "possible_count": dead_code_artifacts.get("possible_count", 0),
+    }
+    for finding in dead_code_artifacts.get("findings", []) or []:
+        findings.append({
+            "check": "dead_code_scan", "severity": finding.get("confidence", "possible"),
+            "file": finding.get("file"), "name": finding.get("name"), "line": finding.get("line"),
+        })
+
+    dep_map_artifacts = build_map_dependencies_artifacts(repo)
+    checks_completed.append("dependency_inspection")
+    dependency_status = {
+        "files_parsed": dep_map_artifacts.get("files_parsed", []),
+        "total_dependencies": dep_map_artifacts.get("total_dependencies", 0),
+        "unpinned_count": dep_map_artifacts.get("unpinned_count", 0),
+        "unpinned_names": dep_map_artifacts.get("unpinned_names", []),
+    }
+    if not dep_map_artifacts.get("files_parsed"):
+        checks_incomplete.append({
+            "check": "dependency_inspection", "reason": "no recognized dependency manifest found",
+        })
+
+    dependency_staleness_status: dict[str, Any]
+    if deep:
+        watch_artifacts = build_watch_deps_artifacts(repo)
+        checks_completed.append("dependency_staleness")
+        dependency_staleness_status = {
+            "mode": "deep",
+            "checked_count": watch_artifacts.get("checked_count", 0),
+            "outdated_count": watch_artifacts.get("outdated_count", 0),
+            "package_manager": watch_artifacts.get("package_manager"),
+        }
+        if not watch_artifacts.get("complete", True):
+            checks_incomplete.append({
+                "check": "dependency_staleness",
+                "reason": "registry check hit its time budget before finishing",
+            })
+            warnings.append(
+                "Dependency staleness check was incomplete — some dependencies were "
+                "not verified against their latest published release."
+            )
+    else:
+        dependency_staleness_status = {
+            "mode": "bounded", "checked_count": 0, "outdated_count": None, "package_manager": None,
+            "note": "staleness against published releases was not checked in bounded mode; "
+                    "pass deep=True to check it",
+        }
+        checks_incomplete.append({
+            "check": "dependency_staleness", "reason": "bounded mode — not executed",
+        })
+
+    if blockers:
+        verdict = "NOT_HEALTHY"
+    elif checks_incomplete:
+        verdict = "INCOMPLETE_ASSESSMENT"
+    elif findings:
+        verdict = "HEALTHY_WITH_FINDINGS"
+    else:
+        verdict = "HEALTHY"
+
+    return {
+        "schema_version": 1, "skill": "codebase_health", "success": True,
+        "checks_requested": checks_requested, "checks_completed": checks_completed,
+        "checks_incomplete": checks_incomplete, "findings": findings,
+        "blockers": blockers, "warnings": warnings,
+        "conflict_status": conflict_status, "dead_code_status": dead_code_status,
+        "dependency_status": dependency_status,
+        "dependency_staleness_status": dependency_staleness_status,
+        "checks": [{"name": name, "completed": name in checks_completed} for name in checks_requested],
+        "evidence": {"deep": deep, "checks_completed": checks_completed},
+        "summary": f"Codebase health assessment: {verdict}.",
+        "error_code": "incomplete_assessment" if verdict == "INCOMPLETE_ASSESSMENT" else None,
+        "verdict": verdict,
+    }
+
+
 _RESUME_LABELS = ("PURPOSE", "OBJECTIVE", "CONSTRAINTS", "COMPLETED", "NEXT STEP")
 
 
