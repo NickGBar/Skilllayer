@@ -876,3 +876,154 @@ VERIFIED_TASK_EXECUTION_SKILL = {
         "record test outcomes via vte_finalize's tests_recorded/tests_passed.",
     ],
 }
+
+# Skills v0.1, part A: register two existing, already-implemented workflows as
+# discoverable professional skills, without changing what they execute. Each
+# entry documents skilllayer_release_readiness / skilllayer_safe_change as they
+# already behave (verdicts, bounded-by-default posture, disclosed limitations)
+# — nothing here is new runtime, only new discovery metadata, in the same shape
+# as VERIFIED_TASK_EXECUTION_SKILL above.
+
+RELEASE_READINESS_SKILL = {
+    "name": "release_readiness",
+    "purpose": (
+        "Aggregate SkillLayer's existing read-only repository inspections — git "
+        "status, a secret scan, dependency and packaging inspection, and memory-"
+        "store integrity — into one bounded release-readiness verdict. Never "
+        "certifies a repository as secure or fully tested; any incomplete or "
+        "skipped check reduces the verdict rather than becoming a false READY."
+    ),
+    "activation_examples": [
+        "is this repository ready to release",
+        "check if this is ready for external testers",
+        "assess release readiness",
+        "can we publish this repository",
+        "audit this repo before tagging a release",
+    ],
+    "non_activation_examples": [
+        "review the change I just made",
+        "fix this specific bug",
+        "explain what this function does",
+        "is this codebase healthy to build on",
+    ],
+    "required_mcp_tools": ["skilllayer_release_readiness"],
+    "supported_modes": ["bounded", "deep"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Never certifies a repository as secure or fully tested.",
+        "Any incomplete or skipped check reduces the verdict (to "
+        "INCOMPLETE_ASSESSMENT or below) rather than being silently treated as "
+        "clean.",
+        "Bounded by default (mode='bounded'): detects the test command without "
+        "executing it; the test suite only runs when mode='deep' is requested "
+        "explicitly.",
+        "Self-checks that the scan did not itself write anything under "
+        ".skilllayer/.",
+    ],
+    "known_limitations": [
+        "No generic cross-document consistency checker; documentation "
+        "consistency is not checked.",
+        "Public/private artifact boundary checks require a repo-specific "
+        "manifest and are not run generically.",
+        "Secret scan is pattern-based and may miss a secret that does not "
+        "match a known pattern.",
+    ],
+}
+
+SAFE_CODE_CHANGE_SKILL = {
+    "name": "safe_code_change",
+    "purpose": (
+        "Plan and validate one narrow code change safely. SkillLayer never "
+        "edits files itself: it searches for relevant files and symbols and "
+        "proposes a bounded plan, then, after the host agent makes the edit, "
+        "independently inspects the resulting diff and runs tests to validate "
+        "it."
+    ),
+    "activation_examples": [
+        "safely change this",
+        "plan then validate this fix",
+        "help me make this change without breaking anything else",
+        "prepare a scoped plan for this bug fix",
+        "validate the change I just made",
+    ],
+    "non_activation_examples": [
+        "is this repository ready to release",
+        "what state is this codebase in",
+        "explain this function to me",
+        "just make the edit, don't bother planning or validating",
+    ],
+    "required_mcp_tools": ["skilllayer_safe_change"],
+    "supported_lifecycle": ["plan", "validate"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Never edits files itself; executed_by is always reported as "
+        "host_agent.",
+        "Never reports CHANGE_VALIDATED when no changed files were detected, "
+        "or when validation did not actually run.",
+        "A dirty working tree at plan time is disclosed as a risk, not hidden "
+        "or silently included.",
+    ],
+    "known_limitations": [
+        "relevant_files/relevant_symbols are keyword-search candidates, never "
+        "a guaranteed-complete set — a call this depends on may be missed if "
+        "the task description doesn't name it clearly.",
+        "Without a git repository, validation cannot track or diff changes at "
+        "all.",
+        "Limited to the top 25 candidate files by keyword search; not "
+        "intended for broad, multi-area refactors.",
+    ],
+}
+
+# Skills v0.1, part B: the first genuine composition — no primitive here is new,
+# only the aggregation. Mirrors RELEASE_READINESS_SKILL's shape exactly.
+
+CODEBASE_HEALTH_SKILL = {
+    "name": "codebase_health",
+    "purpose": (
+        "Aggregate existing read-only SkillLayer analyses — a merge-conflict "
+        "scan, a dead-code scan, and dependency inspection — into one bounded "
+        "codebase-health verdict. Never certifies a codebase as clean; any "
+        "incomplete or skipped check reduces the verdict rather than becoming "
+        "a false HEALTHY."
+    ),
+    "activation_examples": [
+        "is this codebase healthy to build on",
+        "check this repository for dead code and merge conflicts",
+        "assess the architecture health of this project",
+        "what shape is this part of the codebase in",
+    ],
+    "non_activation_examples": [
+        "is this repository ready to release",
+        "review the change I just made",
+        "fix this specific bug",
+        "explain what this function does",
+    ],
+    "required_mcp_tools": ["skilllayer_codebase_health"],
+    "supported_modes": ["bounded", "deep"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Never certifies a codebase as clean or free of unused code.",
+        "Any incomplete or skipped check reduces the verdict (to "
+        "INCOMPLETE_ASSESSMENT) rather than being silently treated as healthy.",
+        "Bounded by default (mode='bounded'): dependency hygiene (which "
+        "manifests exist, what's unpinned) is checked, but staleness against "
+        "published releases is not — that runs only when mode='deep' is "
+        "requested explicitly, since it means a network round-trip per "
+        "dependency.",
+        "Read-only; never edits, deletes, or renames anything it finds.",
+    ],
+    "known_limitations": [
+        "Dead-code detection is regex-based static analysis, not a real "
+        "Python parser — a private symbol with zero other references is "
+        "flagged 'certain', a public one only 'possible' (it could be "
+        "external API), and dynamic access (getattr, reflection) can hide a "
+        "real reference from it entirely.",
+        "Merge-conflict detection is a literal marker scan; it cannot tell a "
+        "genuine unresolved conflict from marker text that happens to appear "
+        "in a file for another reason.",
+        "Overlaps with release_readiness on dependency inspection by design "
+        "— they answer different questions (\"can we ship\" vs. \"should we "
+        "build here\") from some of the same underlying facts, not a "
+        "duplicated capability.",
+    ],
+}

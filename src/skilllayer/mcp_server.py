@@ -12,11 +12,11 @@ from typing import Any
 
 from . import SkillLayer
 from .config import load_config
-from .config.defaults import COMMAND_METADATA, MACROS, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
+from .config.defaults import CODEBASE_HEALTH_SKILL, COMMAND_METADATA, MACROS, RELEASE_READINESS_SKILL, SAFE_CODE_CHANGE_SKILL, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
 from .memory.skilllayer_memory import MEMORY_LOCK_CROSS_PROCESS_SUPPORTED
 from .router import SkillRouter
 from .security import blocked_workflow_reason, workflow_execution_blocked
-from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
+from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_codebase_health_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
 from .session_usage import build_session_usage_artifacts
 from .tasks import public_api as _vte
 from .tasks import skill_audit as _audit
@@ -1087,6 +1087,41 @@ def skilllayer_release_readiness(repo_path: str, deep: bool = False) -> dict[str
         return result
 
 
+def skilllayer_codebase_health(repo_path: str, deep: bool = False) -> dict[str, Any]:
+    """Assess the health of a codebase: unresolved merge conflicts, potentially unused
+    code, and dependency hygiene/staleness — one bounded verdict, not three separate
+    reports to reconcile by hand.
+
+    Aggregates a merge-conflict scan, a dead-code scan, and dependency inspection into
+    one bounded verdict. Bounded by default: dependency *hygiene* (which manifests
+    exist, what's unpinned) is checked, but *staleness* against published releases is
+    not, since that means a network round-trip per dependency. Pass deep=True to check
+    staleness too — the same bounded/deep split release_readiness makes for running
+    tests.
+
+    Never certifies a codebase as clean and never treats an incomplete or skipped check
+    as healthy — any such gap is listed under checks_incomplete and reduces the verdict
+    (to INCOMPLETE_ASSESSMENT) rather than becoming a false HEALTHY. Read-only. Zero LLM
+    calls."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_codebase_health", repo, started)
+        return repo
+    try:
+        result = build_codebase_health_artifacts(repo, deep=deep)
+        result.setdefault("workflow", "CodebaseHealthWorkflow")
+        record_mcp_telemetry("skilllayer_codebase_health", result, started)
+        return result
+    except Exception as exc:
+        result = {
+            "skill": "codebase_health", "success": False, "repo_path": str(repo),
+            "error": str(exc), "verdict": "INCOMPLETE_ASSESSMENT",
+        }
+        record_mcp_telemetry("skilllayer_codebase_health", result, started)
+        return result
+
+
 def skilllayer_resume_work(
     repo_path: str,
     confirm_update: bool = False,
@@ -1677,7 +1712,10 @@ def skilllayer_list_skills() -> dict[str, Any]:
         "success": True,
         "macros": [{"name": name, "tools": list(tools)} for name, tools in MACROS.items()],
         "primitive_tools": primitive_tools,
-        "professional_skills": [VERIFIED_TASK_EXECUTION_SKILL],
+        "professional_skills": [
+            VERIFIED_TASK_EXECUTION_SKILL, RELEASE_READINESS_SKILL, SAFE_CODE_CHANGE_SKILL,
+            CODEBASE_HEALTH_SKILL,
+        ],
     }
     record_mcp_telemetry("skilllayer_list_skills", result, started)
     return result
@@ -2216,7 +2254,8 @@ MCP_TOOL_HANDLERS = (
     skilllayer_detect_dead_code, skilllayer_map_dependencies, skilllayer_save_context,
     skilllayer_track_decision, skilllayer_remember_preferences, skilllayer_rehydrate_context,
     skilllayer_list_workflows, skilllayer_list_skills, skilllayer_doctor,
-    skilllayer_safe_change, skilllayer_release_readiness, skilllayer_resume_work,
+    skilllayer_safe_change, skilllayer_release_readiness, skilllayer_codebase_health,
+    skilllayer_resume_work,
     skilllayer_vte_start, skilllayer_vte_status, skilllayer_vte_checkpoint,
     skilllayer_vte_resume, skilllayer_vte_finalize, skilllayer_vte_abandon,
     skilllayer_audit_record_operation, skilllayer_audit_session,
