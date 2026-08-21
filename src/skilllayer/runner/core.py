@@ -8189,6 +8189,110 @@ def build_release_readiness_artifacts(repo: Path, *, deep: bool = False) -> dict
     }
 
 
+def build_assess_decomposition_artifacts(repo: Path, task: str) -> dict[str, Any]:
+    """Advisory only: deterministic facts about whether a task's target location is
+    already known in this repository, plus a default recommendation on whether
+    multi-agent decomposition (a separate localization step ahead of the actual change)
+    is likely to help or just add coordination overhead.
+
+    SkillLayer never decomposes or orchestrates tasks itself — that is the calling
+    harness's job.
+
+    Two independent localization checks feed the verdict, and the stronger one wins:
+
+    * A term that looks like a path or bare filename ("fix `filesize.py`") is matched
+      against every file's name and relative path — content search cannot see this
+      (build_search_artifacts matches file *contents*, not paths).
+    * Otherwise, the task text is handed to build_find_function_artifacts, which
+      already distinguishes a symbol's *definition* from incidental *references* to
+      it (imports, tests, changelog mentions, docs). This matters in practice: a
+      public function like `naturalsize()` is mentioned in five or six files for
+      every one that defines it, so counting raw file matches — this function's first
+      version did exactly that — reports LOW confidence for a task whose location is
+      actually unambiguous. find_function's own HIGH/MEDIUM/LOW classification is
+      keyed off definition_count, not total match count, and is reused as-is here
+      rather than re-derived.
+
+    Found by validating this signal against the orchestration benchmark's own 10 bug
+    titles (2026-08-21): the first version, built on raw content-match counts, agreed
+    with which strategy had actually resolved each task on 0 of 2 decisive cases.
+
+    recommend_decomposition defaults to False whenever localization confidence is
+    HIGH: a single strong match means a mapper step would spend its budget confirming
+    what the search already found, not adding information — the exact failure mode an
+    isolated multi-role benchmark run surfaced (10 single-file bugs, decomposition
+    resolved fewer of them than a single implementer). It is a default, not a verdict:
+    the calling harness may override it, and nothing here prevents that. Zero LLM calls."""
+    from ..tools.inspect import inspect_repo
+
+    repo_info = inspect_repo(repo)
+    query_terms = _extract_change_search_terms(task)
+
+    path_matches: list[str] = []
+    for term in query_terms:
+        if "." not in term and "/" not in term:
+            continue
+        for path in sorted(repo.rglob("*")):
+            if not path.is_file() or should_ignore_search_path(path, repo):
+                continue
+            relative = str(path.relative_to(repo))
+            if term.lower() in relative.lower() and relative not in path_matches:
+                path_matches.append(relative)
+
+    if len(path_matches) == 1:
+        confidence = "HIGH"
+        reason = f"The task description named a file by path, matching exactly one: {path_matches[0]}."
+        relevant_files = path_matches
+    elif path_matches:
+        confidence = "MEDIUM" if len(path_matches) <= 3 else "LOW"
+        reason = f"The task description named a file by path, matching {len(path_matches)} candidates."
+        relevant_files = path_matches[:25]
+    elif not query_terms:
+        confidence = "LOW"
+        reason = "No searchable term (quoted symbol or significant word) was found in the task description."
+        relevant_files = []
+    else:
+        # extract_symbols requires a bare identifier between backticks — `naturalsize()`
+        # (the common call-style way a bug title names a function) fails that pattern
+        # outright because of the parens, and is silently dropped rather than degraded.
+        # Stripping a trailing empty-call suffix inside backticks first is a narrow,
+        # local fix: it only affects this function's own call, not extract_symbols
+        # itself or its other callers.
+        task_for_symbols = re.sub(r"`([A-Za-z_][A-Za-z0-9_]*)\(\)`", r"`\1`", task)
+        tools = ProjectTools(repo)
+        find_function = build_find_function_artifacts(task_for_symbols, tools)
+        confidence = find_function["confidence"]
+        reason = find_function["confidence_reason"]
+        relevant_files = find_function["file_paths"][:25]
+
+    recommend_decomposition = confidence != "HIGH"
+    repo_file_count = repo_info.get("file_count", 0)
+
+    return {
+        "workflow": "AssessDecompositionNeedWorkflow",
+        "repo_path": str(repo),
+        "task": task,
+        "query_terms": query_terms,
+        "relevant_files": relevant_files,
+        "relevant_file_count": len(relevant_files),
+        "repo_file_count": repo_file_count,
+        "localization_confidence": confidence,
+        "localization_reason": reason,
+        "recommend_decomposition": recommend_decomposition,
+        "summary": (
+            f"Localization confidence {confidence} ({reason}) "
+            f"{'— a single-agent implementer is likely sufficient.' if not recommend_decomposition else '— a localization step ahead of implementation may help.'}"
+        ),
+        "advisory_only": True,
+        "note": (
+            "SkillLayer does not orchestrate, plan, or decompose tasks itself. This is a "
+            "deterministic recommendation only, derived from path/symbol search and "
+            "repository size — the calling harness (and the model driving it) decides "
+            "whether to act on it, override it, or ignore it entirely."
+        ),
+    }
+
+
 _RESUME_LABELS = ("PURPOSE", "OBJECTIVE", "CONSTRAINTS", "COMPLETED", "NEXT STEP")
 
 

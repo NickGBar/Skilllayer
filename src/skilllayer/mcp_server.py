@@ -16,7 +16,7 @@ from .config.defaults import COMMAND_METADATA, MACROS, VERIFIED_TASK_EXECUTION_S
 from .memory.skilllayer_memory import MEMORY_LOCK_CROSS_PROCESS_SUPPORTED
 from .router import SkillRouter
 from .security import blocked_workflow_reason, workflow_execution_blocked
-from .runner.core import build_add_todo_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
+from .runner.core import build_add_todo_artifacts, build_assess_decomposition_artifacts, build_check_port_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
 from .session_usage import build_session_usage_artifacts
 from .tasks import public_api as _vte
 from .tasks import skill_audit as _audit
@@ -1084,6 +1084,41 @@ def skilllayer_release_readiness(repo_path: str, deep: bool = False) -> dict[str
             "error": str(exc), "verdict": "INCOMPLETE_ASSESSMENT",
         }
         record_mcp_telemetry("skilllayer_release_readiness", result, started)
+        return result
+
+
+def skilllayer_assess_decomposition(repo_path: str, task: str) -> dict[str, Any]:
+    """Advisory only: does this task's target location already look known in the
+    repository, and — as a deterministic default, not a verdict — is a multi-agent
+    localization step likely to help or just add coordination overhead?
+
+    Reuses the same keyword search safe_change's plan phase uses to find candidate
+    files, classifies localization_confidence (HIGH/MEDIUM/LOW) from how many files
+    matched, and combines it with the repository's own size. recommend_decomposition
+    defaults to False whenever confidence is HIGH: a single strong match means a
+    separate mapper step would spend its budget confirming what a keyword search
+    already found, not adding information.
+
+    SkillLayer never decomposes, plans, or orchestrates a task itself — that stays the
+    calling harness's job. This tool never executes anything and never blocks a call;
+    the calling harness (and the model driving it) is free to override the default in
+    either direction. Read-only. Zero LLM calls."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_assess_decomposition", repo, started)
+        return repo
+    try:
+        result = build_assess_decomposition_artifacts(repo, task)
+        record_mcp_telemetry("skilllayer_assess_decomposition", result, started)
+        return result
+    except Exception as exc:
+        result = {
+            "workflow": "AssessDecompositionNeedWorkflow", "success": False,
+            "repo_path": str(repo), "error": str(exc),
+            "recommend_decomposition": False, "advisory_only": True,
+        }
+        record_mcp_telemetry("skilllayer_assess_decomposition", result, started)
         return result
 
 
@@ -2216,7 +2251,8 @@ MCP_TOOL_HANDLERS = (
     skilllayer_detect_dead_code, skilllayer_map_dependencies, skilllayer_save_context,
     skilllayer_track_decision, skilllayer_remember_preferences, skilllayer_rehydrate_context,
     skilllayer_list_workflows, skilllayer_list_skills, skilllayer_doctor,
-    skilllayer_safe_change, skilllayer_release_readiness, skilllayer_resume_work,
+    skilllayer_safe_change, skilllayer_release_readiness, skilllayer_assess_decomposition,
+    skilllayer_resume_work,
     skilllayer_vte_start, skilllayer_vte_status, skilllayer_vte_checkpoint,
     skilllayer_vte_resume, skilllayer_vte_finalize, skilllayer_vte_abandon,
     skilllayer_audit_record_operation, skilllayer_audit_session,
