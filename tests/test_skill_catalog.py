@@ -1,11 +1,12 @@
 """Tests for the Skills v0.1 catalog registration (docs/SKILLS.md).
 
-Release Readiness and Safe Code Change are pre-existing, already-implemented
-workflows (build_release_readiness_artifacts / build_safe_change_artifacts) —
-this only covers their new discovery metadata in skilllayer_list_skills(), not
-their execution. Covers: catalog shape parity with verified_task_execution,
-required fields present, and that registration changed no runtime behavior
-(mcp_tool_count is unaffected; the underlying tools still execute identically).
+Release Readiness, Safe Code Change, and Resume Project Work are pre-existing,
+already-implemented workflows — this only covers their discovery metadata in
+skilllayer_list_skills(), not their execution (each has its own workflow test
+file for that). Codebase Health is the one genuine new composition. Covers:
+catalog shape parity with verified_task_execution, required fields present,
+and that registering a pre-existing workflow changed no runtime behavior
+(mcp_tool_count only moves for codebase_health's genuinely new tool).
 """
 from __future__ import annotations
 
@@ -18,19 +19,17 @@ REQUIRED_FIELDS = (
 
 
 class TestCatalogMembership:
-    def test_four_skills_registered(self):
+    def test_five_skills_registered(self):
         names = {s["name"] for s in skilllayer_list_skills()["professional_skills"]}
         assert names == {
-            "verified_task_execution", "release_readiness", "safe_code_change", "codebase_health",
+            "verified_task_execution", "release_readiness", "safe_code_change",
+            "codebase_health", "resume_project_work",
         }
 
-    def test_registration_added_exactly_one_new_mcp_tool(self):
-        # Part A (release_readiness, safe_code_change) was discovery metadata
-        # only. Part B adds codebase_health, a genuinely new tool composing
-        # existing primitives — one new MCP tool, not new primitives. The
-        # absolute count also includes skilllayer_assess_decomposition,
-        # merged separately and unrelated to the skill catalog itself
-        # (49 baseline + 1 codebase_health + 1 assess_decomposition = 51).
+    def test_registration_added_no_new_mcp_tool(self):
+        # resume_project_work wraps the pre-existing skilllayer_resume_work
+        # tool — like release_readiness/safe_code_change (part A), this is
+        # discovery metadata only, no new runtime.
         assert mcp_tool_count() == 51
 
 
@@ -60,15 +59,23 @@ class TestCatalogShape:
         assert entry["required_mcp_tools"] == ["skilllayer_codebase_health"]
         assert entry["supported_modes"] == ["bounded", "deep"]
 
+    def test_resume_project_work_has_required_fields(self):
+        entry = self._entry("resume_project_work")
+        for field in REQUIRED_FIELDS:
+            assert field in entry, f"missing {field}"
+        assert entry["required_mcp_tools"] == ["skilllayer_resume_work"]
+
     def test_non_activation_examples_cross_reference_the_other_skills(self):
         # Each skill's own "don't pick me for this" list should include the
         # others' territory — the whole point of a catalog is telling them apart.
         readiness = self._entry("release_readiness")
         change = self._entry("safe_code_change")
         health = self._entry("codebase_health")
+        resume = self._entry("resume_project_work")
         assert any("change" in ex.lower() for ex in readiness["non_activation_examples"])
         assert any("release" in ex.lower() for ex in change["non_activation_examples"])
         assert any("release" in ex.lower() for ex in health["non_activation_examples"])
+        assert any("release" in ex.lower() for ex in resume["non_activation_examples"])
 
 
 class TestNoRuntimeChange:
@@ -92,3 +99,10 @@ class TestNoRuntimeChange:
         result = skilllayer_codebase_health(str(tmp_path))
         assert "verdict" in result
         assert result["skill"] == "codebase_health"
+
+    def test_resume_work_tool_returns_its_own_verdict_shape(self, tmp_path):
+        from skilllayer.mcp_server import skilllayer_resume_work
+
+        result = skilllayer_resume_work(str(tmp_path))
+        assert "verdict" in result
+        assert result["skill"] == "resume_project_work"

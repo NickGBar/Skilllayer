@@ -38,7 +38,7 @@ bounded verdict lives in its own return value (`verdict` / `final_verdict`) and 
 documented in that skill's own reference doc, linked below — the catalog entry says
 *when to use it and what it promises*, not the full mechanics of every call.
 
-## The four registered skills
+## The five registered skills
 
 | Skill | When to select it | When not to | Verdict range |
 |---|---|---|---|
@@ -46,32 +46,47 @@ documented in that skill's own reference doc, linked below — the catalog entry
 | **`release_readiness`** | Before publishing, tagging a release, or handing a repository to external testers | Reviewing one specific change (use `safe_code_change`); needing a security certification (it never gives one) | `READY_FOR_CAREFUL_TESTERS` … `NOT_READY`/`BLOCKED_BY_POLICY` |
 | **`safe_code_change`** | Making one narrow, bounded change and wanting it independently validated, not self-reported | Broad multi-area refactors (capped at 25 keyword-matched candidate files); audits with no intent to change anything | `CHANGE_VALIDATED` … `CHANGE_INCOMPLETE`/`VALIDATION_FAILED` |
 | **`codebase_health`** | "Is this codebase healthy to build on" — before extending an unfamiliar or long-untouched area | Release decisions (use `release_readiness`); one specific change (use `safe_code_change`) | `HEALTHY` … `INCOMPLETE_ASSESSMENT`/`NOT_HEALTHY` |
+| **`resume_project_work`** | Starting a brand-new session on an existing project — catching up on what was done, what's next, and what drifted since | Ongoing work with the context already in hand; saving new context (use `skilllayer_save_context`) | `READY_TO_CONTINUE` … `CONTEXT_INCOMPLETE`/`MEMORY_UNHEALTHY`/`NO_SAVED_CONTEXT` |
 
-`release_readiness` and `safe_code_change` are pre-existing, already-implemented
-workflows (`build_release_readiness_artifacts` / `build_safe_change_artifacts` in
-`runner/core.py`) — registering them here added zero new runtime behavior, only this
-discovery metadata. `codebase_health` (`build_codebase_health_artifacts`) is the first
-genuine composition: no primitive it calls is new — `skilllayer_find_conflicts`,
+`release_readiness`, `safe_code_change`, and `resume_project_work` are pre-existing,
+already-implemented workflows (`build_release_readiness_artifacts` /
+`build_safe_change_artifacts` / `build_resume_work_artifacts` in `runner/core.py`) —
+registering them here added zero new runtime behavior, only discovery metadata.
+`codebase_health` (`build_codebase_health_artifacts`) is the one genuine new
+composition: no primitive it calls is new — `skilllayer_find_conflicts`,
 `skilllayer_detect_dead_code`, `skilllayer_map_dependencies`, and (deep mode only)
 `skilllayer_watch_deps` all already existed — only their aggregation into one bounded
 verdict is. It intentionally mirrors `release_readiness`'s exact shape
 (`checks_requested`/`checks_completed`/`checks_incomplete`, a bounded/deep split, "an
 incomplete check never becomes a false clean") — the structural test this was built
 against: if a third skill needed a different contract shape, the abstraction would be
-wrong. It didn't. Full field-level detail for each call still lives in the tool's own
-docstring (`skilllayer_release_readiness`, `skilllayer_safe_change`,
-`skilllayer_codebase_health` in `mcp_server.py`).
+wrong. It didn't.
+
+`resume_project_work` was initially deferred as "under question" — its return shape
+(`project_summary`/`detected_drift`/`unfinished_work`/`uncertainty`) matches neither
+`release_readiness`/`codebase_health`'s checks pattern nor `safe_code_change`'s
+plan/validate phases. On inspection that didn't disqualify it: the catalog entry itself
+never required a shared underlying shape (`safe_code_change` already proved that), and
+`resume_project_work` has its own genuine bounded verdict and real activation
+boundaries — a caller starting cold on an existing project is a distinct case, not
+internal plumbing every session needs unconditionally. Full field-level detail for each
+call still lives in the tool's own docstring (`skilllayer_release_readiness`,
+`skilllayer_safe_change`, `skilllayer_codebase_health`, `skilllayer_resume_work` in
+`mcp_server.py`).
 
 `codebase_health` and `release_readiness` both inspect dependencies — deliberately, not
 duplicated by accident. They answer different questions ("can we ship" vs. "should we
 build here") from overlapping facts; a primitive being used by more than one skill is
 not a problem this contract tries to prevent.
 
-## What is deliberately not a skill (yet)
+## What is deliberately not a skill
 
-`resume_work` (`ResumeProjectWorkWorkflow`) is not in the catalog above, even though
-`skilllayer diagnostics` already reports it as available — that diagnostics field is
-static and does not reflect the actual skill catalog; it predates this document and is
-a known inconsistency, not a claim about what is registered here. Whether project
-continuity is a standalone professional skill, or stays a primitive a caller reaches
-for directly, is an open question, deferred rather than decided by default.
+`skilllayer diagnostics`'s `professional_skills` field still lists a static, always-`True`
+dict unrelated to this catalog — a known, pre-existing inconsistency (predates this
+document), not a claim about what is registered here.
+
+Every other primitive (git history, repo inspection, memory CRUD, process/port
+utilities, and the rest of the ~50 MCP tools) stays a primitive. The rule is not "give
+everything a catalog entry" — it is "give a catalog entry to a capability with a real
+question, a real boundary, and a real verdict." Most primitives answer a narrower
+question than that on their own.
