@@ -1027,3 +1027,60 @@ CODEBASE_HEALTH_SKILL = {
         "duplicated capability.",
     ],
 }
+
+# Skills v0.1, continued 2026-08-22: previously deferred as "under question" — see
+# docs/SKILLS.md's former "What is deliberately not a skill (yet)" section — because its
+# return shape (project_summary/detected_drift/unfinished_work/uncertainty) matches
+# neither release_readiness/codebase_health's checks_requested/completed/incomplete
+# pattern nor safe_code_change's plan/validate phases. On inspection that turned out not
+# to disqualify it: safe_code_change already proved the catalog entry does not require a
+# shared underlying shape, and resume_project_work has its own genuine bounded verdict
+# (NO_SAVED_CONTEXT / MEMORY_UNHEALTHY / CONTEXT_INCOMPLETE / READY_WITH_REPOSITORY_DRIFT /
+# READY_TO_CONTINUE) and real activation/non-activation boundaries — a caller starting a
+# brand-new session on an existing project is a genuinely distinct case, not internal
+# plumbing every session needs unconditionally.
+
+RESUME_PROJECT_WORK_SKILL = {
+    "name": "resume_project_work",
+    "purpose": (
+        "Reconstruct project state for a brand-new session from saved memory alone: "
+        "the last saved objective, completed work, constraints, the remembered next "
+        "action, and any drift detected between the saved snapshot and the "
+        "repository's current state. Read-only by default — memory is never "
+        "overwritten unless confirm_update=True is passed together with new_state."
+    ),
+    "activation_examples": [
+        "catch me up on this project",
+        "what was I doing here",
+        "resume where I left off",
+        "what's the status of this project",
+        "restore the project context",
+    ],
+    "non_activation_examples": [
+        "is this repository ready to release",
+        "make this change safely",
+        "is this codebase healthy to build on",
+        "save my current progress",
+    ],
+    "required_mcp_tools": ["skilllayer_resume_work"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Always read-only unless confirm_update=True is passed together with "
+        "new_state — memory is never overwritten implicitly.",
+        "Reports uncertainty honestly (no saved context, no activity baseline, "
+        "unparseable saved state) rather than guessing or inventing a summary.",
+        "Never reports READY_TO_CONTINUE when the memory store itself has a "
+        "broken integrity finding — that returns MEMORY_UNHEALTHY instead.",
+    ],
+    "known_limitations": [
+        "Drift detection has no baseline on the very first run — nothing to "
+        "compare the current repository state against yet.",
+        "Structured recall (last_objective, completed_work, constraints, "
+        "remembered_next_action) depends on the saved context following the "
+        "PURPOSE/OBJECTIVE/CONSTRAINTS/COMPLETED/NEXT STEP convention; anything "
+        "else comes back as raw text in project_summary only.",
+        "Reads only what was explicitly saved with skilllayer_save_context — it "
+        "has no access to a prior conversation itself, only what that "
+        "conversation chose to persist.",
+    ],
+}

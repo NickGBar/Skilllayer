@@ -12,7 +12,7 @@ from typing import Any
 
 from . import SkillLayer
 from .config import load_config
-from .config.defaults import CODEBASE_HEALTH_SKILL, COMMAND_METADATA, MACROS, RELEASE_READINESS_SKILL, SAFE_CODE_CHANGE_SKILL, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
+from .config.defaults import CODEBASE_HEALTH_SKILL, COMMAND_METADATA, MACROS, RELEASE_READINESS_SKILL, RESUME_PROJECT_WORK_SKILL, SAFE_CODE_CHANGE_SKILL, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
 from .memory.skilllayer_memory import MEMORY_LOCK_CROSS_PROCESS_SUPPORTED
 from .router import SkillRouter
 from .security import blocked_workflow_reason, workflow_execution_blocked
@@ -1749,7 +1749,7 @@ def skilllayer_list_skills() -> dict[str, Any]:
         "primitive_tools": primitive_tools,
         "professional_skills": [
             VERIFIED_TASK_EXECUTION_SKILL, RELEASE_READINESS_SKILL, SAFE_CODE_CHANGE_SKILL,
-            CODEBASE_HEALTH_SKILL,
+            CODEBASE_HEALTH_SKILL, RESUME_PROJECT_WORK_SKILL,
         ],
     }
     record_mcp_telemetry("skilllayer_list_skills", result, started)
