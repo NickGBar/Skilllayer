@@ -27,8 +27,11 @@ class TestCatalogMembership:
     def test_registration_added_exactly_one_new_mcp_tool(self):
         # Part A (release_readiness, safe_code_change) was discovery metadata
         # only. Part B adds codebase_health, a genuinely new tool composing
-        # existing primitives — one new MCP tool, not new primitives.
-        assert mcp_tool_count() == 50
+        # existing primitives — one new MCP tool, not new primitives. The
+        # absolute count also includes skilllayer_assess_decomposition,
+        # merged separately and unrelated to the skill catalog itself
+        # (49 baseline + 1 codebase_health + 1 assess_decomposition = 51).
+        assert mcp_tool_count() == 51
 
 
 class TestCatalogShape:
