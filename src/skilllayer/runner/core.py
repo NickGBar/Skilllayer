@@ -8575,6 +8575,98 @@ def build_resume_work_artifacts(
     }
 
 
+def build_test_suite_health_artifacts(
+    repo: Path, *, test_identifier: str | None = None, runs: int = 5,
+) -> dict[str, Any]:
+    """Aggregate existing read-only SkillLayer test measurements into one bounded
+    test-suite-health verdict: is the suite fast, and — separately — is it stable.
+
+    Speed is always measured (build_measure_test_speed_artifacts, one pass). Stability
+    is measured only when the caller names a specific test_identifier to check
+    (build_monitor_flakiness_artifacts) — there is no primitive that discovers which
+    tests in a suite are flaky on its own, and running the whole suite N times under a
+    default would be an expensive, surprising thing for a "bounded by default" skill to
+    do silently. Absence of a stability check is never reported as stability: the
+    verdict distinguishes *_STABLE (checked, found deterministic) from
+    *_STABILITY_UNKNOWN (never checked) — the same "an unrun check never becomes a
+    false clean" discipline as release_readiness/codebase_health, applied to a binary
+    checked/not-checked fact rather than a checks_incomplete list, because unlike those
+    two skills, a stability check here is never *attempted and blocked* — it is either
+    requested by the caller or not requested at all.
+
+    If a stability check is requested and finds the target flaky, that outranks a
+    same-run test failure in the verdict: a test that sometimes passes is a different,
+    more informative fact than "it failed," and reporting TESTS_FAILING over it would
+    discard the more useful signal."""
+    speed = build_measure_test_speed_artifacts(repo)
+    warnings: list[str] = []
+
+    if speed.get("error_code") == "no_test_runner":
+        return {
+            "skill": "test_suite_health", "success": True,
+            "speed": None, "stability": {"checked": False},
+            "checks_completed": [], "checks_incomplete": [{"check": "speed", "reason": "no test runner detected"}],
+            "warnings": [], "verdict": "INCOMPLETE_ASSESSMENT",
+            "summary": "No test runner was detected for this repository.",
+        }
+
+    checks_completed = ["speed"]
+    checks_incomplete: list[dict[str, str]] = []
+    speed_evidence = {
+        "total_duration_ms": speed.get("total_duration_ms"),
+        "test_count": speed.get("test_count"),
+        "passed": speed.get("passed"), "failed": speed.get("failed"), "skipped": speed.get("skipped"),
+        "speed_rating": speed.get("speed_rating"),
+        "baseline_delta_ms": speed.get("baseline_delta_ms"),
+    }
+    if speed.get("environment_error"):
+        checks_incomplete.append({"check": "speed", "reason": "test environment prevented collection or execution"})
+        warnings.append("Speed measurement could not run to completion; results below may be incomplete.")
+    elif not speed.get("tests_run") or speed.get("test_count", 0) == 0:
+        checks_incomplete.append({"check": "speed", "reason": "no tests were collected"})
+
+    stability: dict[str, Any] = {"checked": False}
+    if test_identifier:
+        flaky_result = build_monitor_flakiness_artifacts(repo, test_identifier=test_identifier, runs=runs)
+        if flaky_result.get("error_code") == "no_test_runner":
+            checks_incomplete.append({"check": "stability", "reason": "no test runner detected"})
+        elif flaky_result.get("environment_error"):
+            checks_incomplete.append({"check": "stability", "reason": "test environment prevented the flakiness check"})
+            warnings.append("Requested stability check could not run to completion.")
+        else:
+            checks_completed.append("stability")
+            stability = {
+                "checked": True, "target": test_identifier, "runs": flaky_result.get("runs"),
+                "pass_rate": flaky_result.get("pass_rate"),
+                "flaky": flaky_result.get("flaky"), "deterministic": flaky_result.get("deterministic"),
+                "failure_messages": flaky_result.get("failure_messages", []),
+            }
+
+    if checks_incomplete and ("speed" in [c["check"] for c in checks_incomplete] or
+                              speed.get("test_count", 0) == 0):
+        verdict = "INCOMPLETE_ASSESSMENT"
+    elif stability.get("checked") and stability.get("flaky"):
+        verdict = "FLAKY_DETECTED"
+    elif (speed_evidence.get("failed") or 0) > 0:
+        verdict = "TESTS_FAILING"
+    else:
+        fast = speed_evidence.get("speed_rating") == "fast"
+        if stability.get("checked") and stability.get("deterministic"):
+            verdict = "FAST_AND_STABLE" if fast else "SLOW_BUT_STABLE"
+        else:
+            verdict = "FAST_STABILITY_UNKNOWN" if fast else "SLOW_STABILITY_UNKNOWN"
+
+    return {
+        "schema_version": 1, "skill": "test_suite_health", "success": True,
+        "speed": speed_evidence, "stability": stability,
+        "checks_completed": checks_completed, "checks_incomplete": checks_incomplete,
+        "warnings": warnings,
+        "summary": f"Test suite health: {verdict}.",
+        "error_code": "incomplete_assessment" if verdict == "INCOMPLETE_ASSESSMENT" else None,
+        "verdict": verdict,
+    }
+
+
 def flatten_workflow_artifacts(workflow: str, artifacts: dict[str, Any]) -> dict[str, Any]:
     if workflow in ("SafeCodeChangeWorkflow", "ReleaseReadinessWorkflow", "ResumeProjectWorkWorkflow"):
         # These builders already return their full, final top-level shape

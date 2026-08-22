@@ -519,4 +519,4 @@ class TestMcpIntegration:
         # same as the other tool-count assertions.
         from skilllayer.mcp_server import mcp_tool_count
 
-        assert mcp_tool_count() == 51
+        assert mcp_tool_count() == 52

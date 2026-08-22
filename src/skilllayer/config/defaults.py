@@ -1084,3 +1084,52 @@ RESUME_PROJECT_WORK_SKILL = {
         "conversation chose to persist.",
     ],
 }
+
+# Skills v0.1, Part C: a genuine new composition, like codebase_health — no primitive it
+# calls is new (skilllayer_measure_test_speed, skilllayer_monitor_flakiness both already
+# existed), only their aggregation into one bounded verdict is.
+
+TEST_SUITE_HEALTH_SKILL = {
+    "name": "test_suite_health",
+    "purpose": (
+        "Assess whether a test suite is a signal worth trusting: fast, and — only when "
+        "a specific test is named — stable. Speed is always measured with one run; "
+        "stability is never assumed from an unrun check, so the verdict distinguishes "
+        "'checked and found stable' from 'never checked' rather than defaulting to the "
+        "more flattering answer."
+    ),
+    "activation_examples": [
+        "is this test suite reliable",
+        "check the test suite speed",
+        "is this test flaky",
+        "can I trust this test suite before I build on it",
+    ],
+    "non_activation_examples": [
+        "is this repository ready to release",
+        "is this codebase healthy to build on",
+        "make this change safely",
+        "fix this failing test",
+    ],
+    "required_mcp_tools": ["skilllayer_test_suite_health"],
+    "supported_modes": ["speed_only", "speed_and_targeted_stability"],
+    "expected_receipt_schema_version": 1,
+    "safety_guarantees": [
+        "Never reports a *_STABLE verdict without an actually-run stability check on a "
+        "named test — absence of a check is always *_STABILITY_UNKNOWN, never treated "
+        "as evidence of stability.",
+        "A stability check that finds the named test flaky outranks a same-run test "
+        "failure in the verdict — the more informative, more recently established fact "
+        "wins.",
+        "Never runs the full suite repeatedly by default — a targeted stability check "
+        "only happens when the caller names test_identifier explicitly.",
+    ],
+    "known_limitations": [
+        "Cannot discover which tests in a suite are flaky on its own — there is no "
+        "primitive for that; the caller must already suspect a specific test.",
+        "A speed rating from one run is a single sample, not a distribution — run-to-run "
+        "variance on a shared or loaded machine is not accounted for.",
+        "Stability confidence is bounded by how many runs were requested (default 5, "
+        "capped at 20 by the underlying tool) — a low-probability flake can still be "
+        "missed.",
+    ],
+}
