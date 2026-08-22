@@ -38,7 +38,7 @@ bounded verdict lives in its own return value (`verdict` / `final_verdict`) and 
 documented in that skill's own reference doc, linked below — the catalog entry says
 *when to use it and what it promises*, not the full mechanics of every call.
 
-## The five registered skills
+## The six registered skills
 
 | Skill | When to select it | When not to | Verdict range |
 |---|---|---|---|
@@ -47,18 +47,19 @@ documented in that skill's own reference doc, linked below — the catalog entry
 | **`safe_code_change`** | Making one narrow, bounded change and wanting it independently validated, not self-reported | Broad multi-area refactors (capped at 25 keyword-matched candidate files); audits with no intent to change anything | `CHANGE_VALIDATED` … `CHANGE_INCOMPLETE`/`VALIDATION_FAILED` |
 | **`codebase_health`** | "Is this codebase healthy to build on" — before extending an unfamiliar or long-untouched area | Release decisions (use `release_readiness`); one specific change (use `safe_code_change`) | `HEALTHY` … `INCOMPLETE_ASSESSMENT`/`NOT_HEALTHY` |
 | **`resume_project_work`** | Starting a brand-new session on an existing project — catching up on what was done, what's next, and what drifted since | Ongoing work with the context already in hand; saving new context (use `skilllayer_save_context`) | `READY_TO_CONTINUE` … `CONTEXT_INCOMPLETE`/`MEMORY_UNHEALTHY`/`NO_SAVED_CONTEXT` |
+| **`test_suite_health`** | "Is this test suite reliable" — before trusting it to gate a release or a change | Fixing a specific known-failing test (that's just running the suite); an architecture question (use `codebase_health`) | `FAST_AND_STABLE`/`SLOW_BUT_STABLE` … `FLAKY_DETECTED`/`TESTS_FAILING`/`*_STABILITY_UNKNOWN`/`INCOMPLETE_ASSESSMENT` |
 
 `release_readiness`, `safe_code_change`, and `resume_project_work` are pre-existing,
 already-implemented workflows (`build_release_readiness_artifacts` /
 `build_safe_change_artifacts` / `build_resume_work_artifacts` in `runner/core.py`) —
 registering them here added zero new runtime behavior, only discovery metadata.
-`codebase_health` (`build_codebase_health_artifacts`) is the one genuine new
-composition: no primitive it calls is new — `skilllayer_find_conflicts`,
-`skilllayer_detect_dead_code`, `skilllayer_map_dependencies`, and (deep mode only)
-`skilllayer_watch_deps` all already existed — only their aggregation into one bounded
-verdict is. It intentionally mirrors `release_readiness`'s exact shape
-(`checks_requested`/`checks_completed`/`checks_incomplete`, a bounded/deep split, "an
-incomplete check never becomes a false clean") — the structural test this was built
+`codebase_health` and `test_suite_health` are the two genuine new compositions: no
+primitive either calls is new — `skilllayer_find_conflicts`, `skilllayer_detect_dead_code`,
+`skilllayer_map_dependencies`, `skilllayer_watch_deps`, `skilllayer_measure_test_speed`,
+and `skilllayer_monitor_flakiness` all already existed — only their aggregation into one
+bounded verdict is. `codebase_health` intentionally mirrors `release_readiness`'s exact
+shape (`checks_requested`/`checks_completed`/`checks_incomplete`, a bounded/deep split,
+"an incomplete check never becomes a false clean") — the structural test this was built
 against: if a third skill needed a different contract shape, the abstraction would be
 wrong. It didn't.
 
@@ -69,10 +70,22 @@ plan/validate phases. On inspection that didn't disqualify it: the catalog entry
 never required a shared underlying shape (`safe_code_change` already proved that), and
 `resume_project_work` has its own genuine bounded verdict and real activation
 boundaries — a caller starting cold on an existing project is a distinct case, not
-internal plumbing every session needs unconditionally. Full field-level detail for each
-call still lives in the tool's own docstring (`skilllayer_release_readiness`,
-`skilllayer_safe_change`, `skilllayer_codebase_health`, `skilllayer_resume_work` in
-`mcp_server.py`).
+internal plumbing every session needs unconditionally.
+
+`test_suite_health` composes `measure_test_speed` (always, one run) with
+`monitor_flakiness` (only when the caller names a specific `test_identifier` to
+re-check) — there is no primitive that discovers which tests in a suite are flaky on
+its own, and running the whole suite N times under a "deep" default would be an
+expensive, surprising thing for a bounded-by-default skill to do silently. Its verdict
+is therefore the strictest of the six about not overclaiming: absence of a stability
+check is never `FAST_AND_STABLE`/`SLOW_BUT_STABLE`, only `*_STABILITY_UNKNOWN` — an
+unrun check is never evidence of stability. A stability check that finds the named test
+flaky outranks a same-run test failure, because "sometimes passes" is a more
+informative fact than "failed," not a lesser one.
+
+Full field-level detail for each call still lives in the tool's own docstring
+(`skilllayer_release_readiness`, `skilllayer_safe_change`, `skilllayer_codebase_health`,
+`skilllayer_resume_work`, `skilllayer_test_suite_health` in `mcp_server.py`).
 
 `codebase_health` and `release_readiness` both inspect dependencies — deliberately, not
 duplicated by accident. They answer different questions ("can we ship" vs. "should we
@@ -85,8 +98,20 @@ not a problem this contract tries to prevent.
 dict unrelated to this catalog — a known, pre-existing inconsistency (predates this
 document), not a claim about what is registered here.
 
+As of the sixth skill, a deliberate inventory pass (2026-08-22) considered four more
+candidates from the remaining ~20 content-meaningful primitives and rejected all four:
+**Branch/Merge Readiness** (`list_branches`'s ahead/behind + `find_conflicts`) — too thin
+a wrapper around one fact, and conflict detection only sees markers from an
+already-attempted merge, not a predicted one; **Change Risk from git history**
+(`git_log`/`git_blame`/`file_history`) — no primitive produces a verifiable fact here,
+only a "risk score" that would be an opinion dressed as a verdict; **Dependency Change
+Impact** — no reverse-dependency/usage-site primitive exists to build it from;
+**Local Dev Environment Readiness** (`check_port`/`detect_processes`/`inspect_runtime`)
+— descriptive of the machine, not answering a checkable question about the repository.
+
 Every other primitive (git history, repo inspection, memory CRUD, process/port
-utilities, and the rest of the ~50 MCP tools) stays a primitive. The rule is not "give
+utilities, and the rest of the ~52 MCP tools) stays a primitive. The rule is not "give
 everything a catalog entry" — it is "give a catalog entry to a capability with a real
 question, a real boundary, and a real verdict." Most primitives answer a narrower
-question than that on their own.
+question than that on their own. If nothing new clears that bar, that is success, not
+an unfinished catalog.

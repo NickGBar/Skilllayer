@@ -12,11 +12,11 @@ from typing import Any
 
 from . import SkillLayer
 from .config import load_config
-from .config.defaults import CODEBASE_HEALTH_SKILL, COMMAND_METADATA, MACROS, RELEASE_READINESS_SKILL, RESUME_PROJECT_WORK_SKILL, SAFE_CODE_CHANGE_SKILL, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
+from .config.defaults import CODEBASE_HEALTH_SKILL, COMMAND_METADATA, MACROS, RELEASE_READINESS_SKILL, RESUME_PROJECT_WORK_SKILL, SAFE_CODE_CHANGE_SKILL, TEST_SUITE_HEALTH_SKILL, VERIFIED_TASK_EXECUTION_SKILL, WORKFLOWS, WORKFLOW_METADATA
 from .memory.skilllayer_memory import MEMORY_LOCK_CROSS_PROCESS_SUPPORTED
 from .router import SkillRouter
 from .security import blocked_workflow_reason, workflow_execution_blocked
-from .runner.core import build_add_todo_artifacts, build_assess_decomposition_artifacts, build_check_port_artifacts, build_codebase_health_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
+from .runner.core import build_add_todo_artifacts, build_assess_decomposition_artifacts, build_check_port_artifacts, build_codebase_health_artifacts, build_compare_context_snapshots_artifacts, build_detect_activity_artifacts, build_detect_dead_code_artifacts, build_detect_processes_artifacts, build_detect_secrets_artifacts, build_file_history_artifacts, build_find_conflicts_artifacts, build_get_commit_artifacts, build_git_blame_artifacts, build_git_diff_artifacts, build_git_log_artifacts, build_inspect_repo_structure_artifacts, build_inspect_runtime_artifacts, build_list_branches_artifacts, build_list_todos_artifacts, build_map_dependencies_artifacts, build_mark_todo_done_artifacts, build_measure_test_speed_artifacts, build_monitor_flakiness_artifacts, build_rehydrate_context_artifacts, build_release_readiness_artifacts, build_remember_preferences_artifacts, build_resume_work_artifacts, build_safe_change_artifacts, build_save_context_artifacts, build_search_artifacts, build_search_decisions_artifacts, build_test_suite_health_artifacts, build_track_decision_artifacts, build_validate_memory_artifacts, build_watch_deps_artifacts, build_watch_file_changes_artifacts, snapshot_python_files, unified_diff
 from .session_usage import build_session_usage_artifacts
 from .tasks import public_api as _vte
 from .tasks import skill_audit as _audit
@@ -1122,6 +1122,44 @@ def skilllayer_codebase_health(repo_path: str, deep: bool = False) -> dict[str, 
         return result
 
 
+def skilllayer_test_suite_health(
+    repo_path: str, test_identifier: str | None = None, runs: int = 5,
+) -> dict[str, Any]:
+    """Assess whether a test suite is a signal worth trusting: is it fast, and —
+    separately, only if you name a specific test — is it stable.
+
+    Speed is always measured with one full-suite run (speed_rating, pass/fail/skip
+    counts). Stability is checked only when test_identifier names a specific test to
+    re-run `runs` times — there is no way to discover which tests in a suite are flaky
+    without a suspect to check, and running the whole suite N times is not something
+    this does by default.
+
+    Absence of a stability check is never reported as stability: the verdict
+    distinguishes FAST_AND_STABLE/SLOW_BUT_STABLE (checked, found deterministic) from
+    FAST_STABILITY_UNKNOWN/SLOW_STABILITY_UNKNOWN (never checked) — the same "an unrun
+    check never becomes a false clean" discipline as release_readiness/codebase_health.
+    A stability check that finds the named test flaky outranks a failure reported by
+    the single speed run for the same reason: it is the more informative fact. Read-only.
+    Zero LLM calls."""
+    started = time.perf_counter()
+    repo = validate_repo_path(repo_path)
+    if isinstance(repo, dict):
+        record_mcp_telemetry("skilllayer_test_suite_health", repo, started)
+        return repo
+    try:
+        result = build_test_suite_health_artifacts(repo, test_identifier=test_identifier, runs=runs)
+        result.setdefault("workflow", "TestSuiteHealthWorkflow")
+        record_mcp_telemetry("skilllayer_test_suite_health", result, started)
+        return result
+    except Exception as exc:
+        result = {
+            "skill": "test_suite_health", "success": False, "repo_path": str(repo),
+            "error": str(exc), "verdict": "INCOMPLETE_ASSESSMENT",
+        }
+        record_mcp_telemetry("skilllayer_test_suite_health", result, started)
+        return result
+
+
 def skilllayer_assess_decomposition(repo_path: str, task: str) -> dict[str, Any]:
     """Advisory only: does this task's target location already look known in the
     repository, and — as a deterministic default, not a verdict — is a multi-agent
@@ -1749,7 +1787,7 @@ def skilllayer_list_skills() -> dict[str, Any]:
         "primitive_tools": primitive_tools,
         "professional_skills": [
             VERIFIED_TASK_EXECUTION_SKILL, RELEASE_READINESS_SKILL, SAFE_CODE_CHANGE_SKILL,
-            CODEBASE_HEALTH_SKILL, RESUME_PROJECT_WORK_SKILL,
+            CODEBASE_HEALTH_SKILL, RESUME_PROJECT_WORK_SKILL, TEST_SUITE_HEALTH_SKILL,
         ],
     }
     record_mcp_telemetry("skilllayer_list_skills", result, started)
@@ -2290,6 +2328,7 @@ MCP_TOOL_HANDLERS = (
     skilllayer_track_decision, skilllayer_remember_preferences, skilllayer_rehydrate_context,
     skilllayer_list_workflows, skilllayer_list_skills, skilllayer_doctor,
     skilllayer_safe_change, skilllayer_release_readiness, skilllayer_codebase_health,
+    skilllayer_test_suite_health,
     skilllayer_assess_decomposition,
     skilllayer_resume_work,
     skilllayer_vte_start, skilllayer_vte_status, skilllayer_vte_checkpoint,
