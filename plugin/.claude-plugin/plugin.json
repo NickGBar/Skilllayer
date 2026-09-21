@@ -1,0 +1,16 @@
+{
+  "name": "skilllayer-verify",
+  "version": "0.1.0",
+  "description": "Runs your tests itself when Claude Code tries to finish, and blocks the stop when they fail or a protected path was touched. Nothing the agent says about its own work is trusted.",
+  "author": {
+    "name": "Nicolas Baranov"
+  },
+  "license": "BUSL-1.1",
+  "keywords": [
+    "verification",
+    "tests",
+    "hooks",
+    "stop-hook",
+    "guardrails"
+  ]
+}

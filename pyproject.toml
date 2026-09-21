@@ -27,3 +27,8 @@ skilllayer = "skilllayer.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["skilllayer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# examples/verify-demo/template holds a demo repository whose last test fails on purpose.
+addopts = "--ignore=examples"

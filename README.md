@@ -13,6 +13,10 @@ changes, release readiness checks, and persistent project context.
 - **Continue work across AI-agent sessions.** Save context once; a brand-new
   session — no prior conversation, no shared memory — recovers what was
   completed, what constraints matter, and what to do next.
+- **Check the agent's work instead of trusting it.** A Claude Code Stop hook
+  runs your tests itself and reads the real git state when the agent tries to
+  finish; failing tests or a touched protected path send the agent back to
+  work. See [Verify](#verify-check-the-agents-work).
 
 SkillLayer runs locally and makes no LLM calls of its own. It has no cloud
 service and no uploaded telemetry. It returns
@@ -40,6 +44,35 @@ required. macOS is currently verified.
 - **Resume Project Work** — recover saved context in a new agent session.
 
 After installation, optionally try the disposable [SkillLayer tester sandbox](https://github.com/NickGBar/skilllayer-tester-sandbox) with its separate [one-prompt test](ONE_PROMPT_TEST.md). It is the recommended place to learn the workflows before using a committed copy of a real repository. See [disable or remove](#disable-or-remove) when you are done.
+
+## Verify: check the agent's work
+
+`skilllayer verify` runs your tests itself and reads live git state, then
+decides whether agent work can be accepted as complete. As a Claude Code Stop
+hook it runs when the agent tries to finish; if the tests fail or a protected
+path was touched, the agent is sent back to work with what was observed, and
+you are told why.
+
+```bash
+pipx install git+https://github.com/NickGBar/Skilllayer.git
+claude plugin marketplace add NickGBar/Skilllayer
+claude plugin install skilllayer-verify@skilllayer
+```
+
+To watch it work in a scratch repository without a model:
+`examples/verify-demo/run_demo.sh`.
+
+| Observed by SkillLayer itself | Not verified |
+|---|---|
+| The test result — it runs the tests. | That the tests are meaningful: weakened or deleted tests are reported, not blocked. |
+| Which files changed, from live git state, including commits made during the turn. | Anything the agent says in prose. |
+| Protected paths, from the policy as committed at the start of the turn. | Task scope ("allowed paths"): only the cooperative VTE tools check it. |
+
+A check that did not run is never reported as a pass: no tests found, an
+environment problem or a timeout are `UNVERIFIED_*` verdicts. Everything stays
+on your machine. Checked against Claude Code 2.1.275 on macOS; other versions,
+platforms and agents are not verified. Details, policy and limits:
+[docs/VERIFY.md](docs/VERIFY.md).
 
 ## Install
 
@@ -116,7 +149,7 @@ Verified Task Execution
 ✓ Baseline captured
 ✓ 1 changed file(s) matched approved scope
 ✓ No forbidden paths changed
-✓ Tests passed
+? Tests passed as reported by the agent (SkillLayer did not run them)
 
 Verdict: VERIFIED COMPLETE
 ```
@@ -124,6 +157,13 @@ Verdict: VERIFIED COMPLETE
 It never reports `VERIFIED COMPLETE` when tests were not recorded, the
 outcome is unknown, a forbidden path changed, or the baseline went stale
 mid-task — see [docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md](docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md).
+
+What VTE verifies independently, and what it does not: scope and baseline are
+checked from live git state, so an agent cannot misreport which files it
+changed. The **test result is recorded as the agent reports it** — VTE does not
+run the tests, the receipt labels the result "reported", and a false test claim
+is not detected by VTE itself. `skilllayer verify` (and its Claude Code Stop
+hook) runs the tests itself and is the path that observes them.
 
 `skilllayer_vte_finalize` also returns a deterministic, human-readable
 Markdown report alongside the JSON receipt — for a blocked task too, so you

@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `skilllayer verify`: runs the project's tests itself and reads live git state to decide whether
+  agent work can be accepted as complete — verdicts `VERIFIED`, `TESTS_FAILING`,
+  `POLICY_VIOLATION` and `UNVERIFIED_*` (an unrun check never becomes a pass). See
+  [docs/VERIFY.md](docs/VERIFY.md).
+- `skilllayer-verify` Claude Code plugin (`plugin/`, marketplace in `.claude-plugin/`): a Stop hook
+  that sends the agent back to work when the tests fail or a protected path was touched, with a
+  finite block budget, receipts outside the repository, and `verify --stats`.
+- Policy keys `protected_paths` and `verify` (mode, block budget, unverified handling, timeout).
+- `examples/verify-demo/` scripted walk-through and `scripts/e2e_claude_code_hook.py`, which drives
+  a real Claude Code binary against a scripted API stand-in.
+
+### Changed
+
+- Verified Task Execution receipts and reports now label the test result as **reported** by the
+  agent (`source: "reported"`, limitation `tests_reported_not_independently_verified`) instead of
+  presenting it as a verified fact; scope and baseline remain independently verified.
+
+### Fixed
+
+- Corrected documentation that implied VTE detects a false test claim. It does not: it records the
+  result as reported. `skilllayer verify` is the path that observes tests.
+
 ## 0.2.0 — Early access release preparation
 
 ### Added
