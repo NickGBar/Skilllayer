@@ -32,7 +32,7 @@ else:  # pragma: no cover - exercised only when MCP SDK is installed.
     MCP_IMPORT_ERROR = None
 
 
-MCP_INSTALL_MESSAGE = "MCP dependencies are not installed. Install with: python -m pip install 'mcp>=1.0'"
+MCP_INSTALL_MESSAGE = "MCP dependencies are not installed. Install with: python -m pip install 'mcp>=1.0,<2'"
 
 # Workflows that must never be executed via MCP by external agents. Rename is
 # disabled until it has a preview, explicit confirmation, and rollback: today it
@@ -2348,7 +2348,7 @@ def mcp_tool_count() -> int:
 
 def create_mcp_server() -> Any:
     if FastMCP is None:
-        raise RuntimeError(MCP_INSTALL_MESSAGE)
+        raise RuntimeError(MCP_INSTALL_MESSAGE) from MCP_IMPORT_ERROR
 
     server = FastMCP("SkillLayer")
     # FastMCP otherwise advertises its own package version in serverInfo.
