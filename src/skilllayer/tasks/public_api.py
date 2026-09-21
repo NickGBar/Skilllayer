@@ -695,7 +695,9 @@ def vte_finalize(
     # report can still distinguish "never ran" from "ran and failed" from
     # "ran, outcome unknown".
     tests_satisfied = bool(tests_recorded) and tests_passed is True
-    tests_status: dict[str, Any] = {"recorded": tests_satisfied, "reported_recorded": bool(tests_recorded)}
+    # "source": these are the caller's claims — VTE never runs tests (see skilllayer.verify
+    # for the path that does), so the receipt must never present them as observed.
+    tests_status: dict[str, Any] = {"recorded": tests_satisfied, "reported_recorded": bool(tests_recorded), "source": "reported"}
     if tests_recorded:
         tests_status["passed"] = tests_passed
         if tests_summary_label:

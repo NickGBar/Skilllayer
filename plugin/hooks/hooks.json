@@ -1,0 +1,19 @@
+{
+  "description": "Snapshot the repository when a turn starts; verify it independently when the agent tries to finish.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/skilllayer-hook.sh\" prompt", "timeout": 30 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/skilllayer-hook.sh\" stop", "timeout": 600 }
+        ]
+      }
+    ]
+  }
+}

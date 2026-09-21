@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import shutil
@@ -59,6 +60,8 @@ from .tools import inspect_repo
 from .token_savings_benchmark import run_token_savings_benchmark
 from .workflow_repair import run_workflow_repair_report
 from .version import product_version
+from . import verify as verify_core
+from . import verify_hook
 from .runner.core import (
     build_release_readiness_artifacts,
     build_resume_work_artifacts,
@@ -78,7 +81,7 @@ COMMANDS = {
     "policy",
     "mcp-config",
     "mcp-config-check",
-    "safe-change", "release-readiness", "resume-work",
+    "safe-change", "release-readiness", "resume-work", "verify",
     "stats", "analytics", "benchmark", "analyze-failures", "repair-workflows-report",
     "optimize-cost-report", "generalization-report", "packaging-audit", "open-source-audit",
     "usage-report", "cost-report", "ab-benchmark", "validate-live-telemetry", "demand-report",
@@ -105,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     started = time.perf_counter()
     command_name = str(getattr(args, "command", None) or argv[0] or "unknown")
-    telemetry_exempt = {"release-check", "update-check", "diagnostics"}
+    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify"}
     if automatic_telemetry_enabled() and command_name not in telemetry_exempt:
         telemetry_paths = (
             automatic_telemetry_paths()
@@ -219,6 +222,21 @@ def build_parser() -> argparse.ArgumentParser:
     safe_change_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     safe_change_parser.add_argument("--compact", action="store_true", help="Show concise human output (JSON is unchanged).")
     safe_change_parser.set_defaults(handler=handle_safe_change)
+
+    verify_parser = subparsers.add_parser(
+        "verify",
+        help="Independently verify that work is complete by running the tests and checking repository facts (also the Claude Code Stop-hook entry point).",
+    )
+    verify_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
+    verify_parser.add_argument("--test-command", default=None, help='Test command to run, e.g. "pytest -q". Trusted caller configuration, never read from repository files. Defaults to auto-detection.')
+    verify_parser.add_argument("--hook", choices=["stop", "prompt"], default=None, help="Run as a Claude Code hook (reads the hook JSON from stdin).")
+    verify_parser.add_argument("--max-seconds", type=int, default=None, help="Upper bound for the test run in hook mode. Keep it below the hook timeout configured in Claude Code so a slow run ends as UNVERIFIED_TIMEOUT instead of being killed silently.")
+    verify_parser.add_argument("--no-record", action="store_true", help="In hook mode, do not write receipts or the event log.")
+    verify_parser.add_argument("--record", action="store_true", help="Write a receipt and event-log entry for this one-shot run.")
+    verify_parser.add_argument("--mode", choices=["block", "warn"], default=None, help="Override the policy's enforcement mode for this run.")
+    verify_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    verify_parser.add_argument("--stats", action="store_true", help="Show verification counts recorded for this repository.")
+    verify_parser.set_defaults(handler=handle_verify)
 
     release_readiness_parser = subparsers.add_parser("release-readiness", help="Assess whether a repository is ready for careful external release.")
     release_readiness_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
@@ -537,6 +555,70 @@ def handle_safe_change(args: argparse.Namespace) -> int:
         duration_ms=(time.perf_counter() - started) * 1000.0, tool_calls=0, macro_sequence=[],
     )
     return 0 if result.get("success") else 1
+
+
+def _read_hook_payload() -> dict:
+    try:
+        if sys.stdin is None or sys.stdin.isatty():
+            return {}
+        raw = sys.stdin.read()
+        data = json.loads(raw) if raw.strip() else {}
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def handle_verify(args: argparse.Namespace) -> int:
+    """Exit codes (one-shot): 0 verified or not enforced, 1 error, 2 blocked (failing tests or
+    a protected path), 3 unverified (tests were not observed to pass). Hook mode: exit 0 with a
+    JSON decision on stdout ({"decision": "block", ...} sends the agent back to work; a bare
+    systemMessage warns the user), or exit 2 when SKILLLAYER_BLOCK_STYLE=exit2."""
+    import shlex
+
+    test_command = shlex.split(args.test_command) if args.test_command else None
+    if args.hook:
+        payload = _read_hook_payload()
+        if args.hook == "prompt":
+            outcome = verify_hook.handle_prompt_submit(payload)
+        else:
+            outcome = verify_hook.handle_stop(payload, test_command=test_command, record=not args.no_record, max_seconds=args.max_seconds)
+        if outcome.stdout:
+            print(outcome.stdout)
+        if outcome.stderr:
+            print(outcome.stderr, file=sys.stderr)
+        return outcome.exit_code
+
+    repo = _resolve_repo_arg(args.repo)
+    root = verify_core.find_git_root(repo)
+    if root is None:
+        print("skilllayer verify: not inside a git repository.", file=sys.stderr)
+        return 1
+    if args.stats:
+        stats = verify_core.compute_stats(verify_core.read_events(root))
+        if args.json:
+            print(json.dumps(stats, indent=2))
+        else:
+            print("skilllayer verify — recorded statistics")
+            for key, value in stats.items():
+                print(f"  {key}: {value}")
+        return 0
+    config, notes = verify_hook.load_worktree_config(root)
+    if args.mode:
+        config = dataclasses.replace(config, mode=args.mode)
+    report = verify_core.verify_repo(root, config=config, test_command=test_command, baseline_head=None, session_id="cli")
+    report["limitations"] = sorted(set(report["limitations"]) | set(notes))
+    written = verify_core.record_report(root, report) if args.record else []
+    if args.json:
+        print(json.dumps({**report, "written_paths": written}, indent=2))
+    else:
+        print(verify_core.render_human_report(report))
+        for path in written:
+            print(f"  wrote: {path}")
+    if report["blocked"]:
+        return 2
+    if report["verdict"] in verify_core.UNVERIFIED_VERDICTS:
+        return 3
+    return 0
 
 
 def handle_release_readiness(args: argparse.Namespace) -> int:

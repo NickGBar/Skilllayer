@@ -78,6 +78,20 @@ class TestDeterministicMapping:
         assert report["overall_status"] == "SUCCESS"
         assert report["failed_items"] == []
         assert report["blocked_items"] == []
+
+    def test_reported_tests_are_never_worded_as_verified(self):
+        report = build_human_report(_base_receipt())
+        text = " ".join(report["succeeded_items"])
+        assert "reported" in text and "did not run them" in text
+        markdown = render_human_report_markdown(report)
+        assert "not independently verified" in markdown
+        assert "Tests passed (" not in markdown
+
+    def test_observed_tests_are_worded_as_run_by_skilllayer(self):
+        receipt = _base_receipt(tests_summary={"reported_recorded": True, "passed": True, "summary_label": "3 passed", "source": "observed"})
+        report = build_human_report(receipt)
+        assert any("run by SkillLayer" in item for item in report["succeeded_items"])
+        assert "(run by SkillLayer)" in render_human_report_markdown(report)
         assert report["unknown_items"] == []
         assert report["succeeded_items"]
 

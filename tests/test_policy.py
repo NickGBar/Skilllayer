@@ -68,3 +68,53 @@ def test_invalid_policy_blocks_integrated_workflows(tmp_path: Path) -> None:
     release = build_release_readiness_artifacts(tmp_path)
     assert safe["verdict"] == "POLICY_INVALID"
     assert release["verdict"] == "BLOCKED_BY_POLICY"
+
+
+VERIFY_POLICY = """version: 1
+protected_paths:
+  - migrations/
+  - .github/workflows/
+  - infra/prod.tf
+verify:
+  mode: block
+  max_consecutive_blocks: 3
+  block_on_unverified: true
+  test_timeout_seconds: 120
+"""
+
+
+def test_verify_section_and_protected_paths_are_valid_and_normalized() -> None:
+    from skilllayer.policy import evaluate_policy_text
+
+    result = evaluate_policy_text(VERIFY_POLICY, policy_path="p.yml")
+    assert result["status"] == "POLICY_VALID"
+    policy = result["normalized_policy"]
+    assert policy["protected_paths"] == ["migrations/", ".github/workflows/", "infra/prod.tf"]
+    assert policy["verify"] == {"mode": "block", "max_consecutive_blocks": 3, "block_on_unverified": True, "test_timeout_seconds": 120}
+    # defaults are applied when the new keys are absent, so existing policies stay valid
+    minimal = evaluate_policy_text("version: 1\n", policy_path="p.yml")["normalized_policy"]
+    assert minimal["protected_paths"] == [] and minimal["verify"]["mode"] == "block"
+
+
+def test_verify_policy_rejects_paths_that_escape_or_match_broadly_and_any_command(tmp_path: Path) -> None:
+    from skilllayer.policy import evaluate_policy_text
+
+    for bad in (
+        "protected_paths:\n  - /etc/passwd\n",
+        "protected_paths:\n  - ../outside\n",
+        "protected_paths:\n  - src/**/*.py\n",
+        "verify:\n  mode: off\n",
+        "verify:\n  max_consecutive_blocks: 99\n",
+        "verify:\n  block_on_unverified: maybe\n",
+        # the policy file lives in the repo being judged: it may never define what gets executed
+        "verify:\n  test_command: pytest\n",
+        "verify:\n  test_command: rm -rf /; true\n",
+    ):
+        result = evaluate_policy_text("version: 1\n" + bad, policy_path="p.yml")
+        assert result["status"] == "POLICY_INVALID", bad
+
+
+def test_a_policy_with_verify_keys_still_works_for_the_other_workflows(tmp_path: Path) -> None:
+    (tmp_path / ".skilllayer-policy.yml").write_text(VERIFY_POLICY, encoding="utf-8")
+    assert load_policy(tmp_path)["status"] == "POLICY_VALID"
+    assert main(["policy", "check", "--repo", str(tmp_path), "--json"]) == 0

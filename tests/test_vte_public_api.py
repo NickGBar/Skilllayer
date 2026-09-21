@@ -377,3 +377,30 @@ class TestReceipt:
         text = render_receipt_text(receipt)
         assert "Verified Task Execution" in text
         assert "Verdict:" in text
+
+    def test_a_claimed_test_pass_is_labelled_reported_never_observed(self, tmp_path):
+        """VTE does not run tests, so the receipt must not present the caller's claim as a
+        verified fact — the agent claiming '12 passed' in a repo with no tests is exactly the
+        case this label exists for."""
+        from skilllayer.tasks.receipt import TESTS_NOT_VERIFIED_LIMITATION, build_receipt, render_receipt_text
+
+        repo = _repo(tmp_path)
+        started = _start(repo)
+        task_id = started["task_id"]
+        api.vte_checkpoint(repo, task_id, "done", completed_steps=["noop"])
+        api.vte_finalize(repo, task_id, tests_recorded=True, tests_passed=True, tests_summary_label="12 passed")
+
+        receipt = build_receipt(repo, task_id)
+        assert receipt["tests_summary"]["source"] == "reported"
+        assert TESTS_NOT_VERIFIED_LIMITATION in receipt["limitations"]
+        text = render_receipt_text(receipt)
+        assert "✓ Tests passed" not in text
+        assert "as reported by the agent" in text and "did not run them" in text
+
+    def test_an_observed_test_pass_is_labelled_as_such(self):
+        from skilllayer.tasks.receipt import render_receipt_text
+
+        receipt = {"receipt_version": 1, "task_id": "t", "final_verdict": "TASK_VERIFIED_COMPLETE",
+                   "tests_summary": {"recorded": True, "passed": True, "source": "observed"}}
+        text = render_receipt_text(receipt)
+        assert "✓ Tests passed (observed by SkillLayer)" in text

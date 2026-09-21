@@ -16,7 +16,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0"]
+# mcp 2.x removed mcp.server.fastmcp (FastMCP is now MCPServer); the server is written against 1.x.
+mcp = ["mcp>=1.0,<2"]
 browser = ["playwright>=1.40"]
 dev = ["pytest>=8.0"]
 benchmark = ["anthropic>=0.58"]
@@ -27,3 +28,8 @@ skilllayer = "skilllayer.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["skilllayer*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# examples/verify-demo/template holds a demo repository whose last test fails on purpose.
+addopts = "--ignore=examples"

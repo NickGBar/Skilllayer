@@ -19,6 +19,8 @@ from .persistence import _resolve_paths_or_blocked
 from .resume import load_checkpoint_chain
 
 RECEIPT_SCHEMA_VERSION = 1
+# Added when a test pass was taken from the caller's report rather than observed by a run.
+TESTS_NOT_VERIFIED_LIMITATION = "tests_reported_not_independently_verified"
 # Must match config.defaults.VERIFIED_TASK_EXECUTION_SKILL["name"] exactly —
 # this is the identifier a receipt's consumer uses to look up the skill that
 # produced it in the professional skill catalog.
@@ -91,6 +93,8 @@ def build_receipt(project_root: Path, task_id: str) -> dict[str, Any]:
         evidence_complete = bool(final_result.get("evidence_complete"))
         limitations = list(final_result.get("limitations", []))
         blockers = list(final_result.get("blockers", []))
+        if isinstance(tests_summary, dict) and tests_summary.get("recorded") and tests_summary.get("source", "reported") != "observed":
+            limitations.append(TESTS_NOT_VERIFIED_LIMITATION)
     else:
         final_verdict = None
         changed_paths, allowed_changes, unexpected_changes = [], [], []
@@ -164,8 +168,10 @@ def render_receipt_text(receipt: dict[str, Any]) -> str:
     tests = receipt.get("tests_summary")
     if isinstance(tests, dict) and tests.get("recorded"):
         passed = tests.get("passed")
-        if passed is True:
-            lines.append("✓ Tests passed")
+        if passed is True and tests.get("source", "reported") != "observed":
+            lines.append("? Tests passed as reported by the agent (SkillLayer did not run them)")
+        elif passed is True:
+            lines.append("✓ Tests passed (observed by SkillLayer)")
         elif passed is False:
             lines.append("✗ Tests failed")
         else:

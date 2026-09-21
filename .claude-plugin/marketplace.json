@@ -1,0 +1,15 @@
+{
+  "name": "skilllayer",
+  "description": "Guardrails for AI coding agents that check the work instead of trusting the agent's report.",
+  "owner": {
+    "name": "Nicolas Baranov"
+  },
+  "plugins": [
+    {
+      "name": "skilllayer-verify",
+      "source": "./plugin",
+      "description": "Runs your tests itself when Claude Code tries to finish and blocks the stop when they fail or a protected path was touched.",
+      "version": "0.1.0"
+    }
+  ]
+}

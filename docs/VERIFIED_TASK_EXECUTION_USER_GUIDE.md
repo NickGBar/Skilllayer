@@ -123,10 +123,12 @@ vte_finalize(repo_path, task_id, tests_recorded=True, tests_passed=True,
 ```
 
 Never pass `tests_recorded=True` unless you actually ran the required tests
-and observed a definite result. A false claim is still caught by
-scope/evidence checks (see [Prevented actions](#prevented-actions) below) —
-it is not trusted at face value, but it costs a wasted round trip, so don't
-do it.
+and observed a definite result. **VTE does not run or check the tests**: the
+result is recorded exactly as reported, and the receipt labels it `reported`
+(never `observed`). Scope and baseline are verified independently from live
+git state; a false test claim is *not* detected by VTE. To have the tests run
+and observed independently, use `skilllayer verify` or its Claude Code Stop
+hook.
 
 `vte_finalize` always returns a deterministic, human-readable Markdown
 report (`human_report_markdown`) alongside the structured receipt — for a
@@ -166,7 +168,7 @@ these in `receipt["prevented_actions"]`:
 
 | Type | When |
 |---|---|
-| `FALSE_COMPLETION_PREVENTED` | Finalize was called with `tests_recorded=False` |
+| `FALSE_COMPLETION_PREVENTED` | Finalize was called with `tests_recorded=False` (an honest "not recorded" — a false `tests_recorded=True` is not detected) |
 | `UNKNOWN_TEST_RESULT` | Tests were recorded but the outcome was inconclusive |
 | `FORBIDDEN_PATH_CHANGE` / `OUT_OF_SCOPE_CHANGE` | A change fell outside the approved scope |
 | `STALE_RESUME_BLOCKED` | Resume was blocked by a stale baseline |

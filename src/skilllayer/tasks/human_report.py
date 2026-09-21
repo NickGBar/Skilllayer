@@ -127,11 +127,12 @@ def _blocker_label(code: str) -> str:
 def _tests_view(receipt: dict[str, Any]) -> dict[str, Any]:
     tests = receipt.get("tests_summary") or {}
     if not isinstance(tests, dict):
-        return {"reported_recorded": False, "passed": None, "summary_label": None}
+        return {"reported_recorded": False, "passed": None, "summary_label": None, "source": "reported"}
     return {
         "reported_recorded": bool(tests.get("reported_recorded", tests.get("recorded", False))),
         "passed": tests.get("passed"),
         "summary_label": tests.get("summary_label"),
+        "source": tests.get("source", "reported"),
     }
 
 
@@ -150,7 +151,10 @@ def _succeeded_items(receipt: dict[str, Any]) -> list[str]:
     tests = _tests_view(receipt)
     if tests["reported_recorded"] and tests["passed"] is True:
         label = tests["summary_label"]
-        items.append(f"Required tests completed successfully ({label})." if label else "Required tests completed successfully.")
+        if tests.get("source") == "observed":
+            items.append(f"Required tests were run by SkillLayer and passed ({label})." if label else "Required tests were run by SkillLayer and passed.")
+        else:
+            items.append(f"The agent reported the required tests passing ({label}); SkillLayer did not run them." if label else "The agent reported the required tests passing; SkillLayer did not run them.")
     checkpoints = receipt.get("checkpoints_created", 0) or 0
     if checkpoints:
         items.append(f"{checkpoints} checkpoint(s) were created during the task.")
@@ -420,8 +424,10 @@ def render_human_report_markdown(report: dict[str, Any]) -> str:
         lines.append("")
         passed = tests.get("passed")
         label = tests.get("summary_label")
-        if passed is True:
-            lines.append(f"Tests passed{f' ({label})' if label else ''}.")
+        if passed is True and tests.get("source") != "observed":
+            lines.append(f"Tests reported passed by the agent{f' ({label})' if label else ''}; not independently verified — SkillLayer did not run them.")
+        elif passed is True:
+            lines.append(f"Tests passed{f' ({label})' if label else ''} (run by SkillLayer).")
         elif passed is False:
             lines.append(f"Tests failed{f' ({label})' if label else ''}.")
         else:

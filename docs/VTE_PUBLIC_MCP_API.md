@@ -74,7 +74,7 @@ Read-only.
 | Name | Type | Default | Notes |
 |---|---|---|---|
 | `repo_path`, `task_id` | str | — | required |
-| `tests_recorded` | bool | — | required; `True` only if tests actually ran |
+| `tests_recorded` | bool | — | required; `True` only if tests actually ran. **Recorded as reported — VTE does not run or verify tests** (receipt labels it `reported`) |
 | `tests_passed` | bool \| None | `None` | leave `None` if inconclusive |
 | `tests_summary_label` | str | `None` | short label, e.g. `"12 passed"` |
 | `locale` | str | `"en"` | only `"en"` supported; anything else is rejected explicitly |

@@ -9,12 +9,22 @@ from typing import Any
 POLICY_FILES = (".skilllayer-policy.yml", ".skilllayer-policy.yaml")
 ALLOWED_CHECKS = {"tests", "secrets"}
 ALLOWED_APPROVALS = {"dependency_install", "destructive_command"}
+# Keys whose value is a list / a nested mapping of scalars (the parser is deliberately tiny).
+_LIST_KEYS = frozenset({"required_checks", "approval_required_for", "protected_paths"})
+_MAP_KEYS = frozenset({"safe_change", "release", "verify"})
+VERIFY_MODES = {"block", "warn"}
+VERIFY_KEYS = {"mode", "max_consecutive_blocks", "block_on_unverified", "test_timeout_seconds"}
 DEFAULT_POLICY = {
     "version": 1,
     "required_checks": ["tests", "secrets"],
     "approval_required_for": ["dependency_install", "destructive_command"],
     "safe_change": {"require_clean_or_acknowledged_worktree": True, "require_validation": True},
     "release": {"allow_incomplete": False, "require_tests": True, "require_secret_check": True},
+    # Stop-hook verification (skilllayer verify). protected_paths are repo-relative
+    # files or directory prefixes (trailing "/"); no globs. The test command is never
+    # policy: this file is inside the repository being judged and must not execute anything.
+    "protected_paths": [],
+    "verify": {"mode": "block", "max_consecutive_blocks": 2, "block_on_unverified": False, "test_timeout_seconds": 300},
 }
 
 
@@ -68,17 +78,17 @@ def _parse_policy_text(text: str) -> dict[str, Any]:
             if key in seen:
                 raise ValueError(f"duplicate key: {key}")
             seen.add(key)
-            if key in {"required_checks", "approval_required_for", "safe_change", "release"} and not raw:
-                result[key] = [] if key in {"required_checks", "approval_required_for"} else {}
+            if key in (_LIST_KEYS | _MAP_KEYS) and not raw:
+                result[key] = [] if key in _LIST_KEYS else {}
                 current = key
             else:
                 result[key] = _parse_scalar(raw)
                 current = None
-        elif indent == 2 and current in {"required_checks", "approval_required_for"}:
+        elif indent == 2 and current in _LIST_KEYS:
             if not content.startswith("- "):
                 raise ValueError(f"line {number}: expected list item")
             result[current].append(_parse_scalar(content[2:]))
-        elif indent == 2 and current in {"safe_change", "release"}:
+        elif indent == 2 and current in _MAP_KEYS:
             if ":" not in content or content.startswith("-"):
                 raise ValueError(f"line {number}: expected nested key")
             key, raw = (part.strip() for part in content.split(":", 1))
@@ -92,7 +102,7 @@ def _parse_policy_text(text: str) -> dict[str, Any]:
 
 def _validate(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     errors: list[dict[str, Any]] = []
-    allowed = {"version", "required_checks", "approval_required_for", "safe_change", "release"}
+    allowed = {"version", "required_checks", "approval_required_for", "safe_change", "release", "protected_paths", "verify"}
     unknown = sorted(set(raw) - allowed)
     errors.extend(_error("unknown_field", f"unsupported policy field: {key}") for key in unknown)
     if raw.get("version") != 1:
@@ -116,6 +126,15 @@ def _validate(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str
             for key, item in value.items():
                 if not isinstance(item, bool):
                     errors.append(_error("invalid_type", f"{section}.{key} must be boolean"))
+    protected = raw.get("protected_paths", DEFAULT_POLICY["protected_paths"])
+    if not isinstance(protected, list) or any(not _is_repo_path_rule(x) for x in protected):
+        errors.append(_error("invalid_protected_path", "protected_paths must be repository-relative files or directory prefixes (no absolute paths, '..', or globs)"))
+        protected = []
+    verify = raw.get("verify", {})
+    if not isinstance(verify, dict):
+        errors.append(_error("invalid_type", "verify must be a mapping"))
+        verify = {}
+    errors.extend(_validate_verify(verify))
     if errors:
         return None, errors
     normalized = {
@@ -124,8 +143,34 @@ def _validate(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str
         "approval_required_for": list(approvals),
         "safe_change": {**DEFAULT_POLICY["safe_change"], **safe},
         "release": {**DEFAULT_POLICY["release"], **release},
+        "protected_paths": list(protected),
+        "verify": {**DEFAULT_POLICY["verify"], **verify},
     }
     return normalized, []
+
+
+def _is_repo_path_rule(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip() or "\x00" in value or "\\" in value:
+        return False
+    if value.startswith("/") or (len(value) > 1 and value[1] == ":") or re.search(r"[*?\[\]]", value):
+        return False
+    return all(part not in {"", ".", ".."} for part in value.rstrip("/").split("/"))
+
+
+def _validate_verify(verify: dict[str, Any]) -> list[dict[str, Any]]:
+    errors: list[dict[str, Any]] = []
+    for key in sorted(set(verify) - VERIFY_KEYS):
+        errors.append(_error("unknown_field", f"unsupported policy field: verify.{key}"))
+    mode = verify.get("mode", DEFAULT_POLICY["verify"]["mode"])
+    if mode not in VERIFY_MODES:
+        errors.append(_error("invalid_value", "verify.mode must be block or warn"))
+    for key, low, high in (("max_consecutive_blocks", 1, 10), ("test_timeout_seconds", 10, 3600)):
+        item = verify.get(key, DEFAULT_POLICY["verify"][key])
+        if isinstance(item, bool) or not isinstance(item, int) or not low <= item <= high:
+            errors.append(_error("invalid_value", f"verify.{key} must be an integer between {low} and {high}"))
+    if not isinstance(verify.get("block_on_unverified", False), bool):
+        errors.append(_error("invalid_type", "verify.block_on_unverified must be boolean"))
+    return errors
 
 
 def load_policy(repo: Path) -> dict[str, Any]:
@@ -142,16 +187,28 @@ def load_policy(repo: Path) -> dict[str, Any]:
         base.update(status="POLICY_UNSAFE_PATH", errors=[_error("policy_symlink_escape", "policy symlink resolves outside the selected repository")])
         return base
     try:
-        raw = _parse_policy_text(path.read_text(encoding="utf-8"))
-        normalized, errors = _validate(raw)
-    except (OSError, UnicodeError, ValueError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
         base.update(status="POLICY_INVALID", policy_path=path.name, errors=[_error("policy_parse_error", str(exc))])
+        return base
+    return evaluate_policy_text(text, policy_path=path.name)
+
+
+def evaluate_policy_text(text: str, *, policy_path: str) -> dict[str, Any]:
+    """Validate policy text that did not necessarily come from the working tree — e.g. the
+    version committed at a baseline, which an agent's uncommitted edits cannot loosen."""
+    base = {"status": "POLICY_NOT_PRESENT", "policy_path": None, "version": None, "normalized_policy": None, "errors": [], "warnings": [], "effective_rules": None}
+    try:
+        raw = _parse_policy_text(text)
+        normalized, errors = _validate(raw)
+    except ValueError as exc:
+        base.update(status="POLICY_INVALID", policy_path=policy_path, errors=[_error("policy_parse_error", str(exc))])
         return base
     if errors:
         status = "POLICY_UNSUPPORTED_VERSION" if any(e["code"] == "unsupported_version" for e in errors) else "POLICY_INVALID"
-        base.update(status=status, policy_path=path.name, version=raw.get("version"), errors=errors)
+        base.update(status=status, policy_path=policy_path, version=raw.get("version"), errors=errors)
         return base
-    base.update(status="POLICY_VALID", policy_path=path.name, version=1, normalized_policy=normalized, effective_rules=normalized)
+    base.update(status="POLICY_VALID", policy_path=policy_path, version=1, normalized_policy=normalized, effective_rules=normalized)
     return base
 
 

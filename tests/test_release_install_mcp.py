@@ -6,6 +6,7 @@ working.
 """
 from __future__ import annotations
 
+import ast
 import json
 import importlib.util
 import os
@@ -153,6 +154,35 @@ def test_mcp_config_detects_relocated_executable(tmp_path: Path) -> None:
     assert result["ok"] is False
     assert result["checks"]["executable_exists"] is False
     assert "Regenerate MCP config" in result["remediation"]
+
+
+def _names_imported_eagerly(path: Path) -> set[str]:
+    """Sibling names a file imports at import time (top level, including inside try/if)."""
+    found: set[str] = set()
+    pending = list(ast.parse(path.read_text(encoding="utf-8")).body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.ImportFrom) and node.level == 1:
+            if node.module is None:
+                found.update(alias.name for alias in node.names)
+            else:
+                found.add(node.module.split(".")[0])
+        elif isinstance(node, (ast.Try, ast.If)):
+            pending.extend(node.body + node.orelse + getattr(node, "finalbody", []))
+            for handler in getattr(node, "handlers", []):
+                pending.extend(handler.body)
+    return found
+
+
+def test_every_module_the_cli_imports_eagerly_ships_in_the_release() -> None:
+    """The CLI is every entry point. A sibling module it imports at import time that the
+    release allowlist omits turns `skilllayer --version` into an ImportError after
+    `pip install` — the failure the slow wheel test below only catches at the end of a
+    full run."""
+    package = ROOT / "src" / "skilllayer"
+    modules = {name for name in _names_imported_eagerly(package / "cli.py") if (package / f"{name}.py").exists()}
+    assert modules  # the scan itself works: cli.py does import siblings
+    assert sorted(modules - _release_allowlist()) == []
 
 
 def test_wheel_and_sdist_install_and_real_stdio_handshake(tmp_path: Path) -> None:
