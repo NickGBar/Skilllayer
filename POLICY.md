@@ -21,12 +21,31 @@ release:
   allow_incomplete: false
   require_tests: true
   require_secret_check: true
+protected_paths:
+  - migrations/
+verify:
+  mode: block
+  max_consecutive_blocks: 2
+  block_on_unverified: false
+  test_timeout_seconds: 300
 ```
 
 The supported fields are intentionally limited. Unknown fields, checks, types,
 versions, duplicate keys, YAML tags/aliases, shell metacharacters, and
 environment interpolation are rejected. The parser is bounded, local-only,
 non-executable, and never creates a default policy.
+
+## Protected paths and `skilllayer verify`
+
+`protected_paths` (repo-relative paths; a trailing `/` means everything under that directory —
+no absolute paths, `..`, backslashes or globs) and the `verify` block are read only by
+`skilllayer verify` and its Claude Code Stop hook; see [docs/VERIFY.md](docs/VERIFY.md).
+`verify.mode` is `block` or `warn`, `max_consecutive_blocks` is 1–10, `test_timeout_seconds` is
+10–3600, `block_on_unverified` is a boolean. There is deliberately **no test-command field**:
+the policy is non-executable, and the command that runs comes from the caller's side
+(`SKILLLAYER_TEST_COMMAND` or `--test-command`). The hook reads the policy as *committed* at the
+start of a turn, so an agent cannot loosen it mid-turn, and editing the policy file during a turn
+is itself a violation.
 
 ## Check and dry-run
 
