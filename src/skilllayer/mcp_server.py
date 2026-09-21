@@ -2104,9 +2104,12 @@ def skilllayer_vte_finalize(
     ran the required tests and observed a definite result — set
     tests_passed accordingly; leave tests_passed=None if the outcome was
     inconclusive). Never claim tests_recorded=True without having run the
-    tests: the verdict is derived only from what you report here plus live
-    repository facts, so a false claim is caught by scope/evidence checks,
-    not trusted at face value.
+    tests. SkillLayer does NOT run or check the tests for this tool: scope
+    and baseline are verified independently from live git state, but the
+    test result is recorded exactly as you report it and the receipt labels
+    it "reported", never "observed" — so a false test claim is not detected
+    here. For verification that runs the tests itself, use the
+    `skilllayer verify` CLI / Claude Code Stop hook.
 
     locale currently supports only "en" (rejected explicitly, never silently
     substituted, if anything else is passed). persist_report (default True)

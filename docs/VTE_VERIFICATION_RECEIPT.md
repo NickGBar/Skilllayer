@@ -24,7 +24,7 @@ rendering as `receipt_text`.
   "changed_paths": ["src/auth.py"],
   "allowed_changes": ["src/auth.py"],
   "unexpected_changes": [],
-  "tests_summary": {"recorded": true, "passed": true, "summary_label": "12 passed"},
+  "tests_summary": {"recorded": true, "passed": true, "summary_label": "12 passed", "source": "reported"},
   "checkpoints_created": 1,
   "interruptions_recovered": 0,
   "prevented_actions": [],
@@ -47,6 +47,9 @@ rendering as `receipt_text`.
   finalization has happened).
 - `tests_summary` — exactly what `vte_finalize`'s caller reported
   (`tests_recorded`/`tests_passed`/`tests_summary_label`), never inferred.
+  `source` is `"reported"`: VTE did not run the tests, so a reported pass adds the
+  limitation `tests_reported_not_independently_verified` and renders as
+  "? Tests passed as reported by the agent" rather than a checkmark.
 - `checkpoints_created` — count from the immutable checkpoint chain
   (`load_checkpoint_chain`).
 - `interruptions_recovered` — count of transitions where `resume_task`
