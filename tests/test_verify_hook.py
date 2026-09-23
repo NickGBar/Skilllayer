@@ -325,3 +325,16 @@ def test_the_exit_code_protocol_remains_available_for_older_harnesses(tmp_path, 
     outcome = h.handle_stop(_payload(repo))
     assert outcome.exit_code == 2 and outcome.stdout == ""
     assert "Tests failing (observed by running them)" in outcome.stderr
+
+
+def test_a_protected_path_block_says_revert_first(tmp_path):
+    """Asking the user means stopping, and a stop with the protected file still modified is
+    blocked again — so the instruction is to revert, then mention it in the final message."""
+    repo = _repo(tmp_path, policy="version: 1\nprotected_paths:\n  - migrations/\n")
+    h.handle_prompt_submit(_payload(repo))
+    (repo / "migrations").mkdir()
+    (repo / "migrations/002.sql").write_text("drop table users;")
+    reason = _reason(h.handle_stop(_payload(repo))) or ""
+    assert "Protected path modified: migrations/002.sql — revert it." in reason
+    assert "only the user can approve it" in reason
+    assert "ask the user to approve" not in reason

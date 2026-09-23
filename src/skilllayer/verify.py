@@ -231,11 +231,17 @@ def collect_changes(root: Path, snapshot: Snapshot, baseline_head: str | None) -
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 
 
-def _safe_line(text: str, limit: int = 300) -> str | None:
+def _gate(text: str, limit: int = 300) -> tuple[str | None, str | None]:
     """One line through the persistence gate (it rejects control characters and
-    redacts secrets); None when the gate refuses it."""
+    redacts secrets): (value, None), or (None, why it was refused)."""
     gate = sanitize_persisted_value(text[:limit], FieldPolicy.REDACTABLE_TEXT, max_length=limit, field_name="test_output_tail")
-    return gate.sanitized_value if gate.accepted and gate.sanitized_value is not None else None
+    if gate.accepted and gate.sanitized_value is not None:
+        return gate.sanitized_value, None
+    return None, str(gate.rejection_reason or "refused")
+
+
+def _safe_line(text: str, limit: int = 300) -> str | None:
+    return _gate(text, limit)[0]
 
 
 def _sanitized_tail(text: str, max_lines: int = 25) -> tuple[str | None, list[str]]:
@@ -258,21 +264,55 @@ def _sanitized_tail(text: str, max_lines: int = 25) -> tuple[str | None, list[st
     return tail, ([f"output_tail_lines_withheld:{dropped}"] if dropped else [])
 
 
+# A pytest node name: the test function, then an optional parametrization id.
+_NODE_NAME_RE = re.compile(r"(?P<func>[A-Za-z_][A-Za-z0-9_]*)(?P<params>\[.*\])?")
+
+
+def _is_word_identifier(name: str) -> bool:
+    """A snake_case name built from short, mostly word-like parts, e.g.
+    ``test_save10_never_takes_off_more_than_50_dollars``. Keys and tokens are one long
+    run of characters, not a sentence of short words."""
+    parts = [part for part in name.split("_") if part]
+    return len(parts) >= 3 and all(len(part) <= 16 for part in parts) and 2 * sum(part.isalpha() for part in parts) >= len(parts)
+
+
+def _safe_test_name(name: str) -> str:
+    """A failing test's name for the agent, never dropped. The gate's entropy heuristic
+    refuses any 32+ character token mixing letters and digits — which a descriptive test
+    name often is — so a word-like function name is kept unless it matches a known secret
+    shape. A parametrization id can carry real data and still goes through the full gate."""
+    match = _NODE_NAME_RE.fullmatch(name)
+    if not match:
+        return _safe_line(name, 200) or "(test name withheld)"
+    func, params = match.group("func"), match.group("params") or ""
+    safe_func, reason = _gate(func, 200)
+    if safe_func is None:
+        heuristic_only = bool(reason) and reason.endswith("low_confidence_sensitive_token")
+        safe_func = func if heuristic_only and _is_word_identifier(func) else "(test name withheld)"
+    if params:
+        params = _safe_line(params, 120) or "[…]"
+    return safe_func + params
+
+
 def _failed_test_labels(items: list[Any]) -> list[str]:
     """``file::test — first line of the assertion`` per failing test, deduplicated.
     The runner reports a pytest entry and a traceback entry for one failure; prefer
-    the named entries."""
+    the named entries. Each part is sanitized on its own, so a refused assertion text
+    or parameter never costs the agent the name of the test that failed."""
     entries = [i for i in items if isinstance(i, dict)]
     chosen = [i for i in entries if i.get("test_name")] or entries
     labels: list[str] = []
     for item in chosen:
-        where, name = item.get("file") or "", item.get("test_name") or ""
+        where, name = str(item.get("file") or ""), str(item.get("test_name") or "")
+        where = (_safe_line(where, 200) or "(path withheld)") if where else ""
+        name = _safe_test_name(name) if name else ""
         base = f"{where}::{name}" if where and name else (where or name or str(item.get("kind") or "failure"))
         snippet = str(item.get("snippet") or "").strip().splitlines()[:1]
-        label = _safe_line(f"{base} — {snippet[0]}" if snippet else base, 200)
-        if label and label not in labels:
+        detail = _safe_line(snippet[0], 160) if snippet else None
+        label = f"{base} — {detail}" if detail else base
+        if label not in labels:
             labels.append(label)
-    labels.extend(str(i) for i in items if not isinstance(i, dict))
+    labels.extend(_safe_line(str(i), 200) or "(failure withheld)" for i in items if not isinstance(i, dict))
     return labels[:20]
 
 
@@ -485,7 +525,9 @@ def render_agent_message(report: dict[str, Any], *, attempt: int, max_attempts: 
         elif kind == "tests_unverified":
             lines.append(f"- Tests could not be verified ({finding['verdict']}): {_tests_line(tests)}")
         elif kind == "protected_path_modified":
-            lines.append(f"- Protected path modified: {finding['path']} (revert it or ask the user to approve the change)")
+            # "Revert first": stopping to ask while the file is still modified is itself a
+            # stop, and would be blocked again.
+            lines.append(f"- Protected path modified: {finding['path']} — revert it. If the change is really needed, say so in your final message: only the user can approve it.")
         elif kind == "test_files_touched":
             touched = finding["modified"] + finding["deleted"]
             lines.append(f"- Test files were changed this turn: {', '.join(touched)} — do not weaken tests to make them pass.")

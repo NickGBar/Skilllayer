@@ -5,7 +5,8 @@ to finish, a Stop hook runs the project's tests itself and reads the real git st
 tests or a touched protected path send the agent back to work with the observed facts.
 
 It adds two hooks (`UserPromptSubmit`, `Stop`) and one short skill, and needs the `skilllayer`
-command on your `PATH` (or in `$SKILLLAYER_BIN` or `~/.local/bin`):
+command on your `PATH` (or in `$SKILLLAYER_BIN` or `~/.local/bin`; an install that cannot run
+`verify` is skipped):
 
 ```bash
 pipx install git+https://github.com/NickGBar/Skilllayer.git

@@ -299,3 +299,36 @@ def test_a_relative_path_entry_never_runs_a_script_planted_in_the_repository(tmp
     monkeypatch.chdir(repo)
     v.verify_repo(repo)
     assert not marker.exists()
+
+
+def test_descriptive_failing_test_names_reach_the_agent(tmp_path):
+    """Long snake_case names with digits look like keys to the persistence gate's entropy
+    heuristic. They used to be dropped silently, so the agent saw one of three failures."""
+    repo = _repo(tmp_path)
+    (repo / "tests/test_promo.py").write_text(
+        "def test_save10_never_takes_off_more_than_50_dollars():\n    assert 900.0 == 950.0\n\n\n"
+        "def test_welcome5_never_makes_the_total_negative():\n    assert -2.0 == 0.0\n"
+    )
+    labels = v.verify_repo(repo)["tests"]["failed_tests"]
+    assert any("test_save10_never_takes_off_more_than_50_dollars" in label and "assert 900.0 == 950.0" in label for label in labels), labels
+    assert any("test_welcome5_never_makes_the_total_negative" in label for label in labels), labels
+
+
+def test_secret_looking_test_ids_are_still_kept_out_of_the_receipt(tmp_path):
+    """Relaxing the check for word-like names must not let data through: a parametrized id
+    carries test data, and a name that is itself one long token is not a sentence of words."""
+    token = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7"
+    repo = _repo(tmp_path)
+    (repo / "tests/test_tokens.py").write_text(
+        "import pytest\n\n\n"
+        f"@pytest.mark.parametrize('value', ['{token}'])\n"
+        "def test_rejects_the_token(value):\n    assert value == ''\n\n\n"
+        f"def test_{token}():\n    assert False\n"
+    )
+    report = v.verify_repo(repo)
+    labels = report["tests"]["failed_tests"]
+    assert any(label.startswith("tests/test_tokens.py::test_rejects_the_token[…]") for label in labels), labels
+    assert any("(test name withheld)" in label for label in labels), labels
+    import json
+
+    assert token not in json.dumps(report)

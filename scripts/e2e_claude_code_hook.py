@@ -181,12 +181,15 @@ class Sandbox:
                 raise SystemExit(f"could not set up the plugin ({' '.join(args)}):\n{done.stdout}\n{done.stderr}")
 
     def hook_calls(self) -> list[dict]:
-        """[{args, payload, stdout, exit}] in order, from the wrapper's log."""
+        """[{args, payload, stdout, exit}] in order, from the wrapper's log — only the
+        `verify --hook` calls, not the plugin's `verify --help` probe of each candidate."""
         calls: list[dict] = []
         if not self.hook_log.exists():
             return calls
         for chunk in self.hook_log.read_text().split("ARGS: ")[1:]:
             head, _, rest = chunk.partition("\n")
+            if "--hook" not in head:
+                continue
             payload_text, _, tail = rest.partition("STDOUT: ")
             stdout_text, _, exit_text = tail.rpartition("EXIT: ")
             calls.append({"args": head, "payload": json.loads(payload_text.strip() or "{}"), "stdout": stdout_text.strip(), "exit": int(exit_text.strip() or -1)})
@@ -320,7 +323,23 @@ def scenario_f_a_projects_settings_can_enable_the_plugin_for_a_teammate(sandbox:
     check("and the first stop was blocked", bool(stops) and json.loads(stops[0]["stdout"] or "{}").get("decision") == "block")
 
 
-def scenario_g_the_registered_timeout_leaves_room_for_the_test_budget(sandbox: Sandbox, tmp: Path, check):
+def scenario_g_a_broken_install_earlier_on_path_is_skipped(sandbox: Sandbox, tmp: Path, check):
+    """A stale editable install whose checkout is gone, first on PATH (seen on a real machine)."""
+    broken = tmp / "broken-bin"
+    broken.mkdir()
+    (broken / "skilllayer").write_text("#!/bin/sh\necho \"ModuleNotFoundError: No module named 'skilllayer'\" >&2\nexit 1\n")
+    (broken / "skilllayer").chmod(0o755)
+    repo = make_repo(tmp / "s8")
+    proc, api = play(sandbox, repo, [
+        lambda: write_file("src/calc.py", BROKEN),
+        lambda: text_turn("All done."),
+        lambda: write_file("src/calc.py", FIXED),
+        lambda: text_turn("Fixed."),
+    ], env_extra={"PATH": os.pathsep.join([str(broken), str(sandbox.bin), "/usr/bin", "/bin"])})
+    check("the broken install is skipped and the stop is still verified and blocked", len(api.main_requests) == 4 and api.mentions(2, "cannot be accepted as complete"), len(api.main_requests))
+
+
+def scenario_h_the_registered_timeout_leaves_room_for_the_test_budget(sandbox: Sandbox, tmp: Path, check):
     hooks = json.loads((ROOT / "plugin/hooks/hooks.json").read_text())["hooks"]
     timeout = hooks["Stop"][0]["hooks"][0]["timeout"]
     script = (ROOT / "plugin/hooks/skilllayer-hook.sh").read_text()
@@ -352,7 +371,7 @@ def main() -> int:
         version = sandbox.run_claude("--version").stdout.strip()
         print(f"Claude Code: {version}")
         sandbox.install_plugin()
-        for scenario in (scenario_a_failing_tests_block_the_stop_and_the_agent_recovers, scenario_b_a_missing_binary_is_announced_never_silent, scenario_c_a_hook_that_outlives_its_timeout_is_dropped_silently, scenario_d_a_test_command_from_the_callers_environment_is_what_runs, scenario_e_the_exit_code_protocol_still_works_when_selected, scenario_f_a_projects_settings_can_enable_the_plugin_for_a_teammate, scenario_g_the_registered_timeout_leaves_room_for_the_test_budget):
+        for scenario in (scenario_a_failing_tests_block_the_stop_and_the_agent_recovers, scenario_b_a_missing_binary_is_announced_never_silent, scenario_c_a_hook_that_outlives_its_timeout_is_dropped_silently, scenario_d_a_test_command_from_the_callers_environment_is_what_runs, scenario_e_the_exit_code_protocol_still_works_when_selected, scenario_f_a_projects_settings_can_enable_the_plugin_for_a_teammate, scenario_g_a_broken_install_earlier_on_path_is_skipped, scenario_h_the_registered_timeout_leaves_room_for_the_test_budget):
             print(f"\n{scenario.__name__[9:].replace('_', ' ')}")
             sandbox.hook_log.unlink(missing_ok=True)
             scenario(sandbox, tmp, check)

@@ -15,16 +15,27 @@
 - `examples/verify-demo/` scripted walk-through and `scripts/e2e_claude_code_hook.py`, which drives
   a real Claude Code binary against a scripted API stand-in.
 
+### Fixed
+
+- `skilllayer verify` dropped failing tests with long descriptive names (such as
+  `test_save10_never_takes_off_more_than_50_dollars`) from the message the agent receives: the
+  persistence gate's entropy heuristic took them for keys. Every failing test is now listed; the
+  assertion text and parametrization ids still go through the full gate.
+- The protected-path block told the agent to "ask the user to approve", but stopping to ask is
+  itself a stop, blocked again while the file is modified. It now says to revert first and name
+  the need in the final message.
+- The plugin's hook wrapper used the first `skilllayer` on `PATH` even when it was broken or
+  predated `verify` — an outdated install's exit 2 would read as "block this stop". It now skips
+  unusable installs, never uses relative `PATH` entries, and reports when none works.
+- Corrected documentation that implied VTE detects a false test claim. It does not: it records the
+  result as reported. `skilllayer verify` is the path that observes tests.
+
 ### Changed
 
 - Verified Task Execution receipts and reports now label the test result as **reported** by the
   agent (`source: "reported"`, limitation `tests_reported_not_independently_verified`) instead of
   presenting it as a verified fact; scope and baseline remain independently verified.
 
-### Fixed
-
-- Corrected documentation that implied VTE detects a false test claim. It does not: it records the
-  result as reported. `skilllayer verify` is the path that observes tests.
 
 ## 0.2.0 — Early access release preparation
 
