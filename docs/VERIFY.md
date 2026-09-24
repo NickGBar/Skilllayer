@@ -29,9 +29,13 @@ From a local checkout, use the checkout path in the first two commands. The plug
 hooks and one small skill; `claude plugin details skilllayer-verify` reports their cost as
 about 70 tokens per session (the hooks themselves cost none — the harness runs them).
 
-The hook finds the command on `PATH`, then in `$SKILLLAYER_BIN`, then in `~/.local/bin`. If
-it cannot find it, every Stop says so — *"the verify plugin is enabled but the `skilllayer`
-command was not found, so this work was NOT verified"* — rather than passing silently.
+The hook uses `$SKILLLAYER_BIN`, then a `skilllayer` in any absolute directory on `PATH`, then
+`~/.local/bin` — skipping any that cannot run `verify`, such as an editable install whose
+checkout is gone or a version from before `verify` (whose argument-parser exit code 2 Claude Code
+would otherwise read as "block"). Relative `PATH` entries are never used: they would resolve
+inside the repository being judged. If nothing usable is found, every Stop says so — *"the
+verify plugin is enabled but the `skilllayer` command was not found"*, or *"… is broken or too
+old to run `verify`"*, *"so this work was NOT verified"* — rather than passing silently.
 
 **Team rollout.** Committing `enabledPlugins` to the repository's `.claude/settings.json`
 enables the plugin for a teammate whose machine already knows the marketplace (checked against
