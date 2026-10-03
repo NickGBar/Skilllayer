@@ -1,0 +1,33 @@
+#!/bin/sh
+# SkillLayer gate as a git pre-push hook: nothing reaches the remote unless the required checks
+# were observed passing on exactly the commits being pushed — whoever or whatever wrote them.
+#
+# Install:  cp examples/gate/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#
+# This file lives in .git/hooks, outside the versioned tree, so the change set it judges cannot
+# rewrite it. Required checks are configured here (run_gate below), never in the repository.
+#
+#   SKILLLAYER_GATE_BASE   base for a branch the remote does not have yet (default: origin/main)
+set -u
+zero=$(git hash-object --stdin </dev/null | tr '0-9a-f' '0')
+base_default="${SKILLLAYER_GATE_BASE:-origin/main}"
+head=$(git rev-parse HEAD)
+status=0
+
+run_gate() {
+  skilllayer gate --base "$1"
+  # Add required checks here, for example:
+  #   skilllayer gate --base "$1" --check "lint=ruff check ." --check "sast=semgrep scan --error"
+}
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue  # deleting a remote branch: nothing lands
+  if [ "$local_sha" != "$head" ]; then
+    echo "skilllayer gate: $local_ref is not checked out, and the gate tests the checkout. Check it out and push again." >&2
+    status=1
+    continue
+  fi
+  if [ "$remote_sha" = "$zero" ]; then base="$base_default"; else base="$remote_sha"; fi
+  run_gate "$base" || status=$?
+done
+exit "$status"

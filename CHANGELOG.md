@@ -4,6 +4,13 @@
 
 ### Added
 
+- `skilllayer gate`: an agent-agnostic change gate for CI and git pre-push hooks. A change set is
+  accepted only when its tests and the caller's required checks were observed passing on the exact
+  commits that would land, no protected path changed (policy read from the base commit), and no
+  commit in the range adds a secret — even one deleted again later. Unverified is never a pass.
+  Every run leaves a receipt sealed with a SHA-256 digest and, with `SKILLLAYER_RECEIPT_KEY`, an
+  HMAC that the code under judgement cannot read; `--event-log` writes one line per run for a SIEM.
+  See [docs/GATE.md](docs/GATE.md); examples and a walk-through in `examples/gate/`.
 - `skilllayer verify`: runs the project's tests itself and reads live git state to decide whether
   agent work can be accepted as complete — verdicts `VERIFIED`, `TESTS_FAILING`,
   `POLICY_VIOLATION` and `UNVERIFIED_*` (an unrun check never becomes a pass). See
