@@ -10,10 +10,12 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-SKL="${SKILLLAYER_BIN:-}"
-[ -z "$SKL" ] && SKL="$(command -v skilllayer || true)"
-[ -z "$SKL" ] && [ -x "$ROOT/.venv/bin/skilllayer" ] && SKL="$ROOT/.venv/bin/skilllayer"
-if [ -z "$SKL" ]; then echo "skilllayer not found: install it or set SKILLLAYER_BIN" >&2; exit 2; fi
+# The first install that actually has `gate`: an outdated or broken one earlier on PATH is skipped.
+SKL=""
+for candidate in "${SKILLLAYER_BIN:-}" "$(command -v skilllayer || true)" "$ROOT/.venv/bin/skilllayer"; do
+  if [ -n "$candidate" ] && "$candidate" gate --help >/dev/null 2>&1; then SKL="$candidate"; break; fi
+done
+if [ -z "$SKL" ]; then echo "no working skilllayer with 'gate' found: install it or set SKILLLAYER_BIN" >&2; exit 2; fi
 PY="${DEMO_PYTHON:-}"
 [ -z "$PY" ] && [ -x "$ROOT/.venv/bin/python" ] && PY="$ROOT/.venv/bin/python"
 [ -z "$PY" ] && PY="$(command -v python3 || true)"
