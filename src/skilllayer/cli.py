@@ -255,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--no-receipt", action="store_true", help="Do not write a receipt.")
     gate_parser.add_argument("--event-log", default=None, help="Append one JSON line per run to this file, for a SIEM forwarder.")
     gate_parser.add_argument("--verify-receipt", default=None, metavar="FILE", help="Check a receipt's digest, and its HMAC when SKILLLAYER_RECEIPT_KEY is set, then exit.")
+    gate_parser.add_argument("--lang", choices=list(gate_core.LANGUAGES), default=None, help="Language of the console report. Defaults to $SKILLLAYER_LANG, then en. Receipts, JSON and the event log keep English keys.")
     gate_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     gate_parser.set_defaults(handler=handle_gate)
 
@@ -650,6 +651,7 @@ def handle_gate(args: argparse.Namespace) -> int:
 
     # Before anything runs the change set's code: the key must not be readable by it.
     key, key_id = gate_core.take_receipt_key_from_env()
+    lang = gate_core.resolve_lang(args.lang)
     if args.verify_receipt:
         try:
             receipt = json.loads(Path(args.verify_receipt).expanduser().read_text(encoding="utf-8"))
@@ -660,7 +662,7 @@ def handle_gate(args: argparse.Namespace) -> int:
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"skilllayer gate — receipt {'valid' if result['valid'] else 'INVALID'}: {result['reason']}")
+            print(gate_core.render_receipt_check(result, lang=lang))
         return 0 if result["valid"] else 2
 
     if not args.base:
@@ -707,7 +709,7 @@ def handle_gate(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps({**receipt, "receipt_path": str(path) if path else None}, indent=2, ensure_ascii=False))
     else:
-        print(gate_core.render_gate_report(receipt, receipt_path=path))
+        print(gate_core.render_gate_report(receipt, receipt_path=path, lang=lang))
     if not receipt["blocked"]:
         return 0
     return 2 if receipt["verdict"] == gate_core.GATE_BLOCKED else 3

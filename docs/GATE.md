@@ -42,13 +42,20 @@ job needs the full history (`GIT_DEPTH: "0"`, `fetch-depth: 0`) and the project'
 dependencies.
 
 **Walk-through:** `examples/gate/run_demo.sh` runs four canned agent change sets through the gate
-and then tampers with a receipt.
+and then tampers with a receipt (`DEMO_LANG=ru` for a Russian narration and report).
 
 ```bash
 skilllayer gate --base origin/main \
   --check "lint=ruff check ." --check "sast=semgrep scan --error" \
   --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl
 ```
+
+## Language
+
+The console report and `--verify-receipt` speak English or Russian: `--lang ru`, or
+`SKILLLAYER_LANG=ru` in the environment (`ru_RU.UTF-8` works too). Receipts, `--json` output and
+the event log keep English keys and codes in every language, so SIEM rules and scripts read them
+the same way. Error messages are English only for now.
 
 ## Trust boundaries
 

@@ -68,6 +68,11 @@ NOT_VERIFIED = "not_verified"
 RECEIPT_KEY_ENV = "SKILLLAYER_RECEIPT_KEY"
 RECEIPT_KEY_ID_ENV = "SKILLLAYER_RECEIPT_KEY_ID"
 
+# Console language. Receipts, JSON output and the event log keep English keys and codes,
+# so a SIEM rule or a script reads them the same whatever language a person reads.
+LANG_ENV = "SKILLLAYER_LANG"
+LANGUAGES = ("en", "ru")
+
 _MAX_DIFF_CHARS = 5_000_000
 _MAX_COMMITS = 500
 _BLOCKING_SECRET_SEVERITIES = frozenset({"critical", "high"})
@@ -557,7 +562,15 @@ def _check_line(result: dict[str, Any]) -> str:
     return f"  {mark} {name}: exit {result.get('exit_code')} ({(result.get('duration_ms') or 0) / 1000:.1f}s) — {result.get('command')}"
 
 
-def render_gate_report(receipt: dict[str, Any], *, receipt_path: Path | None = None) -> str:
+def resolve_lang(explicit: str | None = None) -> str:
+    """``--lang``, then ``$SKILLLAYER_LANG`` (``ru``, ``ru_RU.UTF-8`` …), then English."""
+    value = (explicit or os.environ.get(LANG_ENV) or "en").strip().lower()[:2]
+    return value if value in LANGUAGES else "en"
+
+
+def render_gate_report(receipt: dict[str, Any], *, receipt_path: Path | None = None, lang: str = "en") -> str:
+    if lang == "ru":
+        return _render_gate_report_ru(receipt, receipt_path=receipt_path)
     verdict = receipt["verdict"]
     mark = {GATE_VERIFIED: "✓", GATE_BLOCKED: "✗", GATE_NO_CHANGES: "·"}.get(verdict, "?")
     commits = receipt["commits"]
@@ -583,4 +596,148 @@ def render_gate_report(receipt: dict[str, Any], *, receipt_path: Path | None = N
         lines.append("Not accepted: a required check was not observed to pass, and an unverified change is not a pass.")
     if receipt["mode"] == "warn" and verdict in {GATE_BLOCKED, GATE_UNVERIFIED}:
         lines.append("(warn mode: reported only, nothing was blocked)")
+    return "\n".join(lines)
+
+
+def render_receipt_check(result: dict[str, Any], *, lang: str = "en") -> str:
+    if lang == "ru":
+        state = "действительна" if result["valid"] else "НЕДЕЙСТВИТЕЛЬНА"
+        return f"skilllayer gate — квитанция {state}: {_RECEIPT_REASONS_RU.get(result['reason'], result['reason'])}"
+    return f"skilllayer gate — receipt {'valid' if result['valid'] else 'INVALID'}: {result['reason']}"
+
+
+# --------------------------------------------------------------------------- rendering, Russian
+#
+# Counts read "коммитов: 3" rather than "3 коммита": the label-then-number form is correct
+# Russian for every number, with no plural agreement to get wrong.
+
+_VERDICT_RU = {
+    GATE_VERIFIED: "ПРИНЯТО",
+    GATE_BLOCKED: "ЗАБЛОКИРОВАНО",
+    GATE_UNVERIFIED: "НЕ ПРОВЕРЕНО",
+    GATE_NO_CHANGES: "НЕТ ИЗМЕНЕНИЙ",
+}
+
+_REASONS_RU = {
+    "head_not_checked_out": "проверяемый коммит не выгружен",
+    "uncommitted_changes": "в рабочей копии есть незакоммиченные изменения",
+    "git_status_unavailable": "не удалось выполнить git status",
+    "policy_invalid_at_base": "политику в базовом коммите не удалось прочитать",
+    "history_unavailable": "история коммитов недоступна",
+    "history_too_large": "история слишком большая для проверки",
+    "command_not_found": "команда не найдена",
+    "permission_denied": "нет прав на запуск",
+    "unparseable_command": "команду не удалось разобрать",
+    "empty_command": "пустая команда",
+}
+
+_RECEIPT_REASONS_RU = {
+    "signature_ok": "подпись верна",
+    "digest_ok_unsigned": "отпечаток совпадает, квитанция не подписана",
+    "digest_ok_signature_not_checked": "отпечаток совпадает, подпись не проверялась: ключ не задан",
+    "digest_mismatch": "отпечаток не совпадает — квитанцию изменили после выдачи",
+    "signature_mismatch": "подпись не совпадает — квитанцию изменил тот, у кого нет ключа",
+    "unsigned_receipt": "квитанция не подписана, хотя ключ задан",
+    "no_integrity_block": "в квитанции нет блока целостности",
+}
+
+
+def _reason_ru(reason: Any) -> str:
+    parts: list[str] = []
+    for code in str(reason or "").split(","):
+        if code.startswith("timeout_after_"):
+            parts.append(f"превышено время: {code.removeprefix('timeout_after_').rstrip('s')} с")
+        elif code.startswith("os_error:"):
+            parts.append(f"ошибка ОС {code.split(':', 1)[1]}")
+        elif code:
+            parts.append(_REASONS_RU.get(code, code))
+    return "; ".join(parts) or "причина не указана"
+
+
+# Limitation codes are "name" or "name:detail"; unknown ones are shown as they are.
+_LIMITATIONS_RU = {
+    "output_tail_lines_withheld": "скрыто строк вывода (могли содержать секреты)",
+    "binary_files_not_scanned": "бинарных файлов не проверено на секреты",
+    "commit_list_truncated": "список коммитов обрезан до",
+    "test_python_fallback": "тесты запущены интерпретатором",
+    "policy_ignored": "политика не прочитана",
+    "commit_list_unavailable": "список коммитов недоступен",
+    "committed_changes_unavailable": "список изменённых файлов недоступен",
+}
+
+
+def _limitation_ru(code: str) -> str:
+    name, sep, detail = code.partition(":")
+    label = _LIMITATIONS_RU.get(name)
+    if label is None:
+        return code
+    return f"{label}: {detail}" if sep else label
+
+
+def _seconds_ru(ms: Any) -> str:
+    return f"{(ms or 0) / 1000:.1f}".replace(".", ",") + " с"
+
+
+def _tests_detail_ru(result: dict[str, Any]) -> str:
+    command = re.sub(r"^/\S*/(python[0-9.]*)\b", r"\1", result.get("command") or "(команда тестов не найдена)")
+    bits = [f"код {result['exit_code']}" if result.get("exit_code") is not None else None,
+            _seconds_ru(result.get("duration_ms")) if result.get("duration_ms") else None]
+    detail = ", ".join(b for b in bits if b)
+    return f"{command} → {result.get('summary') or result.get('outcome')}" + (f" ({detail})" if detail else "")
+
+
+def _check_line_ru(result: dict[str, Any]) -> str:
+    name, status = result["name"], result["status"]
+    mark = _MARKS.get(status, "?")
+    if name == "tests":
+        detail = _tests_detail_ru(result) if result.get("outcome") else f"не запускались ({_reason_ru(result.get('reason'))})"
+        lines = [f"  {mark} тесты: {detail}"]
+        lines += [f"      {failed}" for failed in (result.get("failed_tests") or [])[:10]]
+        return "\n".join(lines)
+    if name == "protected_paths":
+        if status == NOT_VERIFIED:
+            return f"  ? защищённые пути: не проверены ({_reason_ru(result.get('reason'))})"
+        if result.get("approved_by_caller"):
+            return f"  {mark} защищённые пути: изменены с разрешения — {', '.join(result['hits'][:5])}"
+        if result["hits"]:
+            return f"  {mark} защищённые пути: {', '.join(result['hits'][:5])} (политика взята из базового коммита)"
+        return f"  {mark} защищённые пути: не затронуты"
+    if name == "secrets":
+        if status == NOT_VERIFIED:
+            return f"  ? секреты: не проверены ({_reason_ru(result.get('reason'))})"
+        found = result.get("findings") or []
+        if not found:
+            return f"  ✓ секреты: не найдены (проверено добавленных строк: {result.get('added_lines_scanned', 0)})"
+        shown = ", ".join(f"{f['file']}:{f['line']} ({f['pattern']}, коммит {f['commit']})" for f in found[:5])
+        return f"  ✗ секреты: найдено {len(found)} — {shown}"
+    label = "проверка " + name.removeprefix("check:")
+    if status == NOT_VERIFIED:
+        return f"  ? {label}: не выполнена ({_reason_ru(result.get('reason'))})"
+    return f"  {mark} {label}: код {result.get('exit_code')} ({_seconds_ru(result.get('duration_ms'))}) — {result.get('command')}"
+
+
+def _render_gate_report_ru(receipt: dict[str, Any], *, receipt_path: Path | None) -> str:
+    verdict = receipt["verdict"]
+    mark = {GATE_VERIFIED: "✓", GATE_BLOCKED: "✗", GATE_NO_CHANGES: "·"}.get(verdict, "?")
+    lines = [
+        f"skilllayer gate — {mark} {_VERDICT_RU.get(verdict, verdict)} ({verdict})",
+        f"  изменения: {receipt['merge_base'][:10]}..{receipt['head']['sha'][:10]} — коммитов: {len(receipt['commits'])}, "
+        f"с пометкой ИИ: {receipt['ai_assisted_commits']}, файлов: {receipt['changes']['paths_total']}",
+    ]
+    lines += [_check_line_ru(r) for r in receipt.get("checks") or []]
+    for note in receipt.get("notes") or []:
+        if note["kind"] == "test_files_touched":
+            lines.append(f"  примечание: изменены файлы тестов — {', '.join((note['modified'] + note['deleted'])[:5])}")
+        elif note["kind"] == "agent_configuration_modified":
+            lines.append(f"  примечание: изменена конфигурация агента — {note['path']}")
+    if receipt.get("limitations"):
+        lines.append("  ограничения: " + "; ".join(_limitation_ru(str(code)) for code in receipt["limitations"]))
+    if receipt_path is not None:
+        lines.append(f"  квитанция: {receipt_path}  ({(receipt.get('integrity') or {}).get('digest', 'не запечатана')[:23]}…)")
+    if verdict == GATE_BLOCKED:
+        lines.append("Не принято: обязательная проверка не прошла на коммитах, которые попали бы в ветку. Исправьте и отправьте снова.")
+    elif verdict == GATE_UNVERIFIED:
+        lines.append("Не принято: обязательная проверка не подтвердилась, а непроверенное изменение не считается прошедшим.")
+    if receipt["mode"] == "warn" and verdict in {GATE_BLOCKED, GATE_UNVERIFIED}:
+        lines.append("(режим warn: только отчёт, ничего не заблокировано)")
     return "\n".join(lines)

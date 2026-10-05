@@ -70,6 +70,7 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("SKILLLAYER_VERIFY_DIR", str(tmp_path / "vdata"))
     monkeypatch.delenv(g.RECEIPT_KEY_ENV, raising=False)
     monkeypatch.delenv(g.RECEIPT_KEY_ID_ENV, raising=False)
+    monkeypatch.delenv(g.LANG_ENV, raising=False)
 
 
 def test_a_clean_agent_change_is_verified_and_marked_ai_assisted(tmp_path):
@@ -291,3 +292,71 @@ def test_the_signing_key_is_not_visible_to_the_code_under_judgement(tmp_path, mo
     monkeypatch.setenv(g.RECEIPT_KEY_ENV, "ci-key")
     assert main(["gate", "--repo", str(repo), "--base", "main", "--test-command", shlex.join(PYTEST),
                  "--no-receipt", "--check", f"probe={probe.strip()}"]) == 0
+
+
+def test_the_report_reads_in_russian(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, f"feat\n\n{AI_TRAILER}", {"src/auth.py": _SRC + "# x\n"})
+    text = g.render_gate_report(_gate(repo), lang="ru")
+    assert "skilllayer gate — ✓ ПРИНЯТО (VERIFIED)" in text
+    assert "коммитов: 1, с пометкой ИИ: 1, файлов: 1" in text
+    assert "✓ защищённые пути: не затронуты" in text
+    assert "✓ тесты: " in text and "(код 0, " in text
+    assert "Не принято" not in text
+
+
+def test_the_russian_report_translates_reasons_and_still_hides_secrets(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "add config", {"src/config.py": f'AWS_KEY = "{FAKE_AWS_KEY}"\n'})
+    receipt = _gate(repo, checks=[("sast", "definitely-not-an-installed-tool")])
+    text = g.render_gate_report(receipt, lang="ru")
+    assert "✗ ЗАБЛОКИРОВАНО (BLOCKED)" in text
+    assert "? проверка sast: не выполнена (команда не найдена)" in text
+    assert "✗ секреты: найдено 1 — src/config.py:1 (aws_access_key, коммит" in text
+    assert FAKE_AWS_KEY not in text
+    assert text.splitlines()[-1].startswith("Не принято: обязательная проверка не прошла")
+
+
+def test_the_russian_report_says_why_tests_did_not_run(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "change", {"src/auth.py": _SRC + "# x\n"})
+    (repo / "src/auth.py").write_text("def login():\n    return 'local edit'\n")
+    text = g.render_gate_report(_gate(repo), lang="ru")
+    assert "? НЕ ПРОВЕРЕНО (UNVERIFIED)" in text
+    assert "? тесты: не запускались (в рабочей копии есть незакоммиченные изменения)" in text
+
+
+def test_receipt_checks_read_in_russian():
+    assert g.render_receipt_check({"valid": True, "reason": "signature_ok"}, lang="ru") == (
+        "skilllayer gate — квитанция действительна: подпись верна"
+    )
+    assert g.render_receipt_check({"valid": False, "reason": "digest_mismatch"}, lang="ru") == (
+        "skilllayer gate — квитанция НЕДЕЙСТВИТЕЛЬНА: отпечаток не совпадает — квитанцию изменили после выдачи"
+    )
+
+
+def test_the_language_comes_from_the_flag_then_the_environment(tmp_path, monkeypatch, capsys):
+    repo = _repo(tmp_path)
+    _commit(repo, "change", {"src/auth.py": _SRC + "# x\n"})
+    common = ["gate", "--repo", str(repo), "--base", "main", "--test-command", shlex.join(PYTEST), "--no-receipt"]
+    assert main(common) == 0
+    assert "✓ VERIFIED" in capsys.readouterr().out
+    assert main([*common, "--lang", "ru"]) == 0
+    assert "✓ ПРИНЯТО (VERIFIED)" in capsys.readouterr().out
+    monkeypatch.setenv(g.LANG_ENV, "ru_RU.UTF-8")
+    assert main(common) == 0
+    assert "✓ ПРИНЯТО (VERIFIED)" in capsys.readouterr().out
+    assert main([*common, "--lang", "en"]) == 0
+    assert "✓ VERIFIED" in capsys.readouterr().out
+    monkeypatch.setenv(g.LANG_ENV, "de")
+    assert main(common) == 0
+    assert "✓ VERIFIED" in capsys.readouterr().out
+    # Machine-readable output does not change with the language.
+    assert main([*common, "--lang", "ru", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["verdict"] == "VERIFIED"
+
+
+def test_russian_limitations_are_translated_and_unknown_codes_kept():
+    assert g._limitation_ru("output_tail_lines_withheld:3") == "скрыто строк вывода (могли содержать секреты): 3"
+    assert g._limitation_ru("policy_ignored:.skilllayer-policy.yml:SCHEMA") == "политика не прочитана: .skilllayer-policy.yml:SCHEMA"
+    assert g._limitation_ru("something_new:1") == "something_new:1"

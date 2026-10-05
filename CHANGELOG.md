@@ -11,6 +11,8 @@
   Every run leaves a receipt sealed with a SHA-256 digest and, with `SKILLLAYER_RECEIPT_KEY`, an
   HMAC that the code under judgement cannot read; `--event-log` writes one line per run for a SIEM.
   See [docs/GATE.md](docs/GATE.md); examples and a walk-through in `examples/gate/`.
+- `skilllayer gate --lang ru` (or `SKILLLAYER_LANG=ru`): the console report and receipt checks in
+  Russian. Receipts, JSON and the event log keep English keys. `DEMO_LANG=ru` for the walk-through.
 - `skilllayer verify`: runs the project's tests itself and reads live git state to decide whether
   agent work can be accepted as complete — verdicts `VERIFIED`, `TESTS_FAILING`,
   `POLICY_VIOLATION` and `UNVERIFIED_*` (an unrun check never becomes a pass). See
