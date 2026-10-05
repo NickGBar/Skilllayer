@@ -1,0 +1,35 @@
+# SkillLayer gate in GitLab CI: a merge request passes only when the required checks were
+# observed passing on its exact commits, whichever agent or person made them.
+#
+# Receipts are kept as job artifacts. SKILLLAYER_RECEIPT_KEY (a masked CI/CD variable) seals
+# them with an HMAC; the gate removes it from the environment before running any project code.
+
+skilllayer-gate:
+  stage: test
+  image: python:3.12
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"  # the gate needs the base commit and the history in between
+  script:
+    - pip install "git+https://github.com/NickGBar/Skilllayer.git"  # or your internal mirror
+    - pip install -r requirements.txt pytest                         # the project's own test deps
+    - >
+      skilllayer gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+      --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl
+  artifacts:
+    when: always
+    paths:
+      - gate-receipts/
+
+# A change to a protected path (migrations, CI config, the policy itself) fails the job above.
+# When a person decides it is legitimate, they run this manual job; GitLab records who did.
+skilllayer-gate-approved:
+  extends: skilllayer-gate
+  when: manual
+  script:
+    - pip install "git+https://github.com/NickGBar/Skilllayer.git"
+    - pip install -r requirements.txt pytest
+    - >
+      skilllayer gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --approve-protected
+      --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl

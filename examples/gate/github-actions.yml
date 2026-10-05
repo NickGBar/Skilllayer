@@ -1,0 +1,26 @@
+# SkillLayer gate in GitHub Actions (.github/workflows/skilllayer-gate.yml): a pull request
+# passes only when the required checks were observed passing on what would be merged.
+name: skilllayer-gate
+on: pull_request
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the gate needs the base commit and the history in between
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "git+https://github.com/NickGBar/Skilllayer.git" pytest
+      - run: >
+          skilllayer gate --base "${{ github.event.pull_request.base.sha }}"
+          --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl
+        env:
+          SKILLLAYER_RECEIPT_KEY: ${{ secrets.SKILLLAYER_RECEIPT_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gate-receipts
+          path: gate-receipts/

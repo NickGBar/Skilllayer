@@ -60,6 +60,7 @@ from .tools import inspect_repo
 from .token_savings_benchmark import run_token_savings_benchmark
 from .workflow_repair import run_workflow_repair_report
 from .version import product_version
+from . import gate as gate_core
 from . import verify as verify_core
 from . import verify_hook
 from .runner.core import (
@@ -81,7 +82,7 @@ COMMANDS = {
     "policy",
     "mcp-config",
     "mcp-config-check",
-    "safe-change", "release-readiness", "resume-work", "verify",
+    "safe-change", "release-readiness", "resume-work", "verify", "gate",
     "stats", "analytics", "benchmark", "analyze-failures", "repair-workflows-report",
     "optimize-cost-report", "generalization-report", "packaging-audit", "open-source-audit",
     "usage-report", "cost-report", "ab-benchmark", "validate-live-telemetry", "demand-report",
@@ -108,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     started = time.perf_counter()
     command_name = str(getattr(args, "command", None) or argv[0] or "unknown")
-    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify"}
+    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify", "gate"}
     if automatic_telemetry_enabled() and command_name not in telemetry_exempt:
         telemetry_paths = (
             automatic_telemetry_paths()
@@ -237,6 +238,25 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     verify_parser.add_argument("--stats", action="store_true", help="Show verification counts recorded for this repository.")
     verify_parser.set_defaults(handler=handle_verify)
+
+    gate_parser = subparsers.add_parser(
+        "gate",
+        help="Agent-agnostic change gate for CI and git pre-push hooks: the commits that would land are accepted only when required checks were observed passing; every run leaves a verifiable receipt.",
+    )
+    gate_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
+    gate_parser.add_argument("--base", default=None, help="Ref the change set is measured from, e.g. origin/main or $CI_MERGE_REQUEST_DIFF_BASE_SHA. The repository policy is read from this commit, so a change cannot loosen its own guardrails.")
+    gate_parser.add_argument("--head", default="HEAD", help="Commit under judgement; it must be the checked-out commit. Defaults to HEAD.")
+    gate_parser.add_argument("--test-command", default=None, help='Test command to run, e.g. "pytest -q". Trusted caller configuration, never read from repository files. Defaults to auto-detection.')
+    gate_parser.add_argument("--check", action="append", default=None, metavar="NAME=COMMAND", help="A further required check, e.g. --check 'sast=semgrep scan --error'. Repeatable; run without a shell. Trusted caller configuration.")
+    gate_parser.add_argument("--mode", choices=["block", "warn"], default="block", help="block (default): a failed or unverified check rejects the change set. warn: report only.")
+    gate_parser.add_argument("--max-seconds", type=int, default=None, help="Timeout for the test run and for each check. Defaults to the policy's test timeout.")
+    gate_parser.add_argument("--approve-protected", action="store_true", help="Accept changes to protected paths in this run — for a CI job that runs only after a person approved them. Recorded in the receipt.")
+    gate_parser.add_argument("--receipt-dir", default=None, help="Directory for the receipt. Defaults to the per-user SkillLayer data directory, outside the repository.")
+    gate_parser.add_argument("--no-receipt", action="store_true", help="Do not write a receipt.")
+    gate_parser.add_argument("--event-log", default=None, help="Append one JSON line per run to this file, for a SIEM forwarder.")
+    gate_parser.add_argument("--verify-receipt", default=None, metavar="FILE", help="Check a receipt's digest, and its HMAC when SKILLLAYER_RECEIPT_KEY is set, then exit.")
+    gate_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
+    gate_parser.set_defaults(handler=handle_gate)
 
     release_readiness_parser = subparsers.add_parser("release-readiness", help="Assess whether a repository is ready for careful external release.")
     release_readiness_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
@@ -619,6 +639,78 @@ def handle_verify(args: argparse.Namespace) -> int:
     if report["verdict"] in verify_core.UNVERIFIED_VERDICTS:
         return 3
     return 0
+
+
+def handle_gate(args: argparse.Namespace) -> int:
+    """Exit codes: 0 accepted (VERIFIED, NO_CHANGES, or warn mode), 1 error (an unresolvable
+    ref, not a repository, an unwritable receipt, an internal failure — never a pass), 2 blocked
+    (a check failed), 3 unverified (a check was not observed to pass). With --verify-receipt:
+    0 valid, 2 invalid, 1 unreadable."""
+    import shlex
+
+    # Before anything runs the change set's code: the key must not be readable by it.
+    key, key_id = gate_core.take_receipt_key_from_env()
+    if args.verify_receipt:
+        try:
+            receipt = json.loads(Path(args.verify_receipt).expanduser().read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"skilllayer gate: cannot read receipt: {exc}", file=sys.stderr)
+            return 1
+        result = gate_core.check_receipt(receipt if isinstance(receipt, dict) else {}, key=key)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"skilllayer gate — receipt {'valid' if result['valid'] else 'INVALID'}: {result['reason']}")
+        return 0 if result["valid"] else 2
+
+    if not args.base:
+        print("skilllayer gate: --base is required — the ref the change set is measured from, e.g. origin/main.", file=sys.stderr)
+        return 1
+    root = verify_core.find_git_root(_resolve_repo_arg(args.repo))
+    if root is None:
+        print("skilllayer gate: not inside a git repository.", file=sys.stderr)
+        return 1
+    try:
+        checks = [gate_core.parse_check_spec(spec) for spec in args.check or []]
+    except ValueError as exc:
+        print(f"skilllayer gate: --check {exc}", file=sys.stderr)
+        return 1
+    receipt_dir = Path(args.receipt_dir).expanduser().resolve() if args.receipt_dir else gate_core.default_receipt_dir(root)
+    try:
+        receipt = gate_core.run_gate(
+            root,
+            base_ref=args.base,
+            head_ref=args.head,
+            test_command=shlex.split(args.test_command) if args.test_command else None,
+            checks=checks,
+            mode=args.mode,
+            max_seconds=args.max_seconds,
+            approve_protected=args.approve_protected,
+            receipt_dir=receipt_dir,
+        )
+    except ValueError as exc:
+        print(f"skilllayer gate: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # fail closed: an error is never an accepted change set
+        print(f"skilllayer gate: internal error ({type(exc).__name__}); nothing was verified, so nothing is accepted.", file=sys.stderr)
+        return 1
+    receipt = gate_core.seal_receipt(receipt, key=key, key_id=key_id)
+    path = None
+    try:
+        if not args.no_receipt:
+            path = gate_core.write_receipt(receipt, receipt_dir)
+        if args.event_log:
+            gate_core.append_event(receipt, Path(args.event_log).expanduser())
+    except OSError as exc:
+        print(f"skilllayer gate: could not record the evidence ({exc}); a run without a receipt is not accepted.", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps({**receipt, "receipt_path": str(path) if path else None}, indent=2, ensure_ascii=False))
+    else:
+        print(gate_core.render_gate_report(receipt, receipt_path=path))
+    if not receipt["blocked"]:
+        return 0
+    return 2 if receipt["verdict"] == gate_core.GATE_BLOCKED else 3
 
 
 def handle_release_readiness(args: argparse.Namespace) -> int:
