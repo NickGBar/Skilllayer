@@ -4,6 +4,9 @@
 #
 # Install:  cp examples/gate/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
 #
+# A convenience, not evidence: `git push --no-verify` skips it. Receipts that prove anything
+# come from the CI job (examples/gate/gitlab-ci.yml) with the key in a masked variable.
+#
 # This file lives in .git/hooks, outside the versioned tree, so the change set it judges cannot
 # rewrite it. Required checks are configured here (run_gate below), never in the repository.
 #
