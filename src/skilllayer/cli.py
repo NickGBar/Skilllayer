@@ -251,6 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--mode", choices=["block", "warn"], default="block", help="block (default): a failed or unverified check rejects the change set. warn: report only.")
     gate_parser.add_argument("--max-seconds", type=int, default=None, help="Timeout for the test run and for each check. Defaults to the policy's test timeout.")
     gate_parser.add_argument("--approve-protected", action="store_true", help="Accept changes to protected paths in this run — for a CI job that runs only after a person approved them. Recorded in the receipt.")
+    gate_parser.add_argument("--approve-test-changes", action="store_true", help="Accept a change set that weakens the tests (removed tests or assertions, skips, lowered thresholds) — for a CI job a person runs after reviewing it. Recorded in the receipt.")
     gate_parser.add_argument("--receipt-dir", default=None, help="Directory for the receipt. Defaults to the per-user SkillLayer data directory, outside the repository.")
     gate_parser.add_argument("--no-receipt", action="store_true", help="Do not write a receipt.")
     gate_parser.add_argument("--event-log", default=None, help="Append one JSON line per run to this file, for a SIEM forwarder.")
@@ -688,6 +689,7 @@ def handle_gate(args: argparse.Namespace) -> int:
             mode=args.mode,
             max_seconds=args.max_seconds,
             approve_protected=args.approve_protected,
+            approve_test_changes=args.approve_test_changes,
             receipt_dir=receipt_dir,
         )
     except ValueError as exc:

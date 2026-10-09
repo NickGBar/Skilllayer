@@ -18,6 +18,7 @@ The change set is `merge-base(base, head)..head`; `head` must be the checked-out
 | `tests` | the tests fail when the gate runs them | no tests found, environment error, timeout, or the checkout is not exactly `head` |
 | `protected_paths` | a path protected by the policy **at the base commit** changed | — |
 | `secrets` | a commit in the range adds a critical or high-severity secret pattern outside test fixtures — even if a later commit deletes it, since history reaches the remote | the history is unavailable or too large to scan |
+| `test_integrity` | the change set weakens the suite: fewer test functions or assertions overall, a `skip`/`xfail` added, an assertion that cannot fail (`assert True`), a lowered coverage threshold, tests deselected in the runner or CI configuration, a test file deleted — unless the caller passes `--approve-test-changes` | the diff is unavailable or too large |
 | `check:<name>` | a required command (`--check name=command`) exits non-zero | the command is missing, cannot run, or times out |
 
 Notes that do not block: test files changed, agent configuration changed, key-shaped strings in
@@ -67,6 +68,16 @@ the same way. Error messages are English only for now.
   manual CI job that GitLab records a person running). The receipt says the change was approved.
 - **The gate runs the change set's code** (tests, checks), with the caller's permissions, exactly
   as running the tests yourself would. It does not sandbox it.
+
+## Weakened tests
+
+Told to make failing tests pass, an agent can fix the code — or delete the failing assertion,
+skip the test, or lower the coverage bar. CI then runs what is left and reports green.
+`test_integrity` reads the net diff and counts what the change set took away from the suite;
+every signal is a line-level pattern, no model judges intent. Counts are totals across the change
+set, so a test moved from one file to another is not a weakening. A refactor that really removes
+tests is reported too — whether it is legitimate is a person's call, made with
+`--approve-test-changes` in a CI job they run, and recorded in the receipt.
 
 ## Receipts
 

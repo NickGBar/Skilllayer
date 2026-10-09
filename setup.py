@@ -21,7 +21,7 @@ REQUIRED_RUNTIME_MODULES = frozenset({
     "__init__", "__main__", "claude_code_pricing", "cli", "cost_tracking",
     "demand_tracking", "mcp_config", "mcp_server", "security", "session_usage",
     "telemetry", "version", "diagnostics", "sanitization", "operations", "update_check", "policy",
-    "verify", "verify_hook", "gate",
+    "verify", "verify_hook", "gate", "weakened_tests",
 })
 
 # Reachable only through documented maintainer/report commands. They are public
