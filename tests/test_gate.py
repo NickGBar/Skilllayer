@@ -399,3 +399,43 @@ def test_adding_a_test_keeps_the_suite_intact(tmp_path):
     assert integrity["status"] == g.PASSED and integrity["findings"] == []
     assert integrity["counts"]["test_functions"] == {"added": 1, "removed": 0}
     assert receipt["verdict"] == g.GATE_VERIFIED
+
+
+_FLAKY_TEST = (
+    "from pathlib import Path\n\n"
+    "MARK = Path(__file__).resolve().parents[2] / 'flaky.marker'  # outside the repository\n\n\n"
+    "def test_sometimes():\n"
+    "    if not MARK.exists():\n"
+    "        MARK.write_text('ran once')\n"
+    "        assert False, 'first run fails'\n"
+)
+
+
+def test_a_test_that_fails_then_passes_is_flaky_not_a_pass(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "flaky", {"tests/test_flaky.py": _FLAKY_TEST})
+    receipt = _gate(repo)
+    tests = _check(receipt, "tests")
+    assert tests["status"] == g.NOT_VERIFIED and tests["reason"] == "flaky_tests"
+    assert tests["flaky_tests"] == ["tests/test_flaky.py::test_sometimes"]
+    assert [r["outcome"] for r in tests["reruns"]] == ["PASSED"]
+    assert receipt["verdict"] == g.GATE_UNVERIFIED
+    assert "flaky or order-dependent" in g.render_gate_report(receipt)
+    assert "упали, затем прошли при перезапуске" in g.render_gate_report(receipt, lang="ru")
+
+
+def test_the_caller_can_accept_flaky_tests_and_it_is_recorded(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "flaky", {"tests/test_flaky.py": _FLAKY_TEST})
+    receipt = _gate(repo, accept_flaky=True)
+    tests = _check(receipt, "tests")
+    assert tests["status"] == g.PASSED and tests["flaky_accepted_by_caller"] is True
+    assert receipt["verdict"] == g.GATE_VERIFIED
+
+
+def test_a_real_failure_survives_the_reruns_and_reruns_can_be_turned_off(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "break", {"src/auth.py": "def login():\n    return 'new'\n"})
+    tests = _check(_gate(repo), "tests")
+    assert tests["status"] == g.FAILED and len(tests["reruns"]) == 2 and "flaky_tests" not in tests
+    assert "reruns" not in _check(_gate(repo, flaky_reruns=0), "tests")

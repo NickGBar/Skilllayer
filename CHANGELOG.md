@@ -16,6 +16,9 @@
   threshold, tests deselected in configuration, a deleted test file. `--approve-test-changes` for a
   person's approval, recorded in the receipt. The walk-through gains a scene where the agent removes
   the failing assertion.
+- `skilllayer gate` re-runs failing tests (`--flaky-reruns`, default 2). A failure that then passes is
+  reported as flaky or order-dependent — not verified, so not a pass — unless the caller passes
+  `--accept-flaky`, which the receipt records.
 - `skilllayer gate --lang ru` (or `SKILLLAYER_LANG=ru`): the console report and receipt checks in
   Russian. Receipts, JSON and the event log keep English keys. `DEMO_LANG=ru` for the walk-through.
 - `skilllayer verify`: runs the project's tests itself and reads live git state to decide whether

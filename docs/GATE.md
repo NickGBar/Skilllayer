@@ -15,7 +15,7 @@ The change set is `merge-base(base, head)..head`; `head` must be the checked-out
 
 | Check | Fails (blocks) when | Not verified when |
 | --- | --- | --- |
-| `tests` | the tests fail when the gate runs them | no tests found, environment error, timeout, or the checkout is not exactly `head` |
+| `tests` | the tests fail when the gate runs them, and still fail when the failures are re-run (`--flaky-reruns`, default 2) | no tests found, environment error, timeout, the checkout is not exactly `head`, or the failures passed on re-run — flaky or order-dependent, which is not a pass unless the caller passes `--accept-flaky` (recorded) |
 | `protected_paths` | a path protected by the policy **at the base commit** changed | — |
 | `secrets` | a commit in the range adds a critical or high-severity secret pattern outside test fixtures — even if a later commit deletes it, since history reaches the remote | the history is unavailable or too large to scan |
 | `test_integrity` | the change set weakens the suite: fewer test functions or assertions overall, a `skip`/`xfail` added, an assertion that cannot fail (`assert True`), a lowered coverage threshold, tests deselected in the runner or CI configuration, a test file deleted — unless the caller passes `--approve-test-changes` | the diff is unavailable or too large |

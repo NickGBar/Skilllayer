@@ -252,6 +252,8 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--max-seconds", type=int, default=None, help="Timeout for the test run and for each check. Defaults to the policy's test timeout.")
     gate_parser.add_argument("--approve-protected", action="store_true", help="Accept changes to protected paths in this run — for a CI job that runs only after a person approved them. Recorded in the receipt.")
     gate_parser.add_argument("--approve-test-changes", action="store_true", help="Accept a change set that weakens the tests (removed tests or assertions, skips, lowered thresholds) — for a CI job a person runs after reviewing it. Recorded in the receipt.")
+    gate_parser.add_argument("--flaky-reruns", type=int, default=2, help="When tests fail, re-run the failures up to this many times (default 2; 0 disables). A failure that then passes is reported as flaky — not a pass.")
+    gate_parser.add_argument("--accept-flaky", action="store_true", help="Accept tests that failed and then passed on re-run. Recorded in the receipt.")
     gate_parser.add_argument("--receipt-dir", default=None, help="Directory for the receipt. Defaults to the per-user SkillLayer data directory, outside the repository.")
     gate_parser.add_argument("--no-receipt", action="store_true", help="Do not write a receipt.")
     gate_parser.add_argument("--event-log", default=None, help="Append one JSON line per run to this file, for a SIEM forwarder.")
@@ -690,6 +692,8 @@ def handle_gate(args: argparse.Namespace) -> int:
             max_seconds=args.max_seconds,
             approve_protected=args.approve_protected,
             approve_test_changes=args.approve_test_changes,
+            flaky_reruns=max(0, args.flaky_reruns),
+            accept_flaky=args.accept_flaky,
             receipt_dir=receipt_dir,
         )
     except ValueError as exc:
