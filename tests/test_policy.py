@@ -90,7 +90,7 @@ def test_verify_section_and_protected_paths_are_valid_and_normalized() -> None:
     assert result["status"] == "POLICY_VALID"
     policy = result["normalized_policy"]
     assert policy["protected_paths"] == ["migrations/", ".github/workflows/", "infra/prod.tf"]
-    assert policy["verify"] == {"mode": "block", "max_consecutive_blocks": 3, "block_on_unverified": True, "test_timeout_seconds": 120}
+    assert policy["verify"] == {"mode": "block", "max_consecutive_blocks": 3, "block_on_unverified": True, "test_timeout_seconds": 120, "block_on_weakened_tests": True}
     # defaults are applied when the new keys are absent, so existing policies stay valid
     minimal = evaluate_policy_text("version: 1\n", policy_path="p.yml")["normalized_policy"]
     assert minimal["protected_paths"] == [] and minimal["verify"]["mode"] == "block"

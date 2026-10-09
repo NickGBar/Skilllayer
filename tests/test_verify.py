@@ -113,11 +113,11 @@ def test_editing_the_policy_file_is_always_a_violation(tmp_path):
     assert ".skilllayer-policy.yml" in report["changes"]["protected_hits"]
 
 
-def test_weakened_tests_are_reported_as_observed_facts(tmp_path):
+def test_a_test_rewritten_to_assert_true_is_weakened_not_verified(tmp_path):
     repo = _repo(tmp_path)
     (repo / "tests/test_auth.py").write_text("def test_login():\n    assert True\n")
     report = v.verify_repo(repo)
-    assert report["verdict"] == v.VERIFIED  # they pass — but the tampering is visible
+    assert report["verdict"] == v.TESTS_WEAKENED  # they pass — because the check can no longer fail
     touched = [f for f in report["findings"] if f["kind"] == "test_files_touched"]
     assert touched and "tests/test_auth.py" in touched[0]["modified"]
     assert "Test files were changed" in v.render_agent_message(
@@ -332,3 +332,22 @@ def test_secret_looking_test_ids_are_still_kept_out_of_the_receipt(tmp_path):
     import json
 
     assert token not in json.dumps(report)
+
+
+def test_weakened_tests_get_their_own_verdict_and_count(tmp_path):
+    repo = _repo(tmp_path)
+    (repo / "tests/test_auth.py").write_text("from src.auth import login\n\n\ndef test_login():\n    login()\n")
+    report = v.verify_repo(repo)
+    assert report["verdict"] == v.TESTS_WEAKENED and report["blocked"] is True
+    weakened = next(f for f in report["findings"] if f["kind"] == "tests_weakened")
+    assert [f["kind"] for f in weakened["findings"]] == ["assertions_removed"]
+    stats = v.compute_stats([{"verdict": v.TESTS_WEAKENED, "blocked": True, "session_id": "s", "ts": "t"}])
+    assert stats["blocked_tests_weakened"] == 1
+
+
+def test_failing_tests_keep_their_verdict_when_tests_were_also_weakened(tmp_path):
+    repo = _repo(tmp_path)
+    _break(repo)
+    (repo / "tests/test_auth.py").write_text(_TEST_SRC.replace("def test_login", "def test_other_check():\n    assert True is True\n\n\ndef test_login"))
+    report = v.verify_repo(repo)
+    assert report["verdict"] == v.TESTS_FAILING

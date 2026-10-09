@@ -58,12 +58,16 @@ try it on a real machine before relying on it.
 | `VERIFIED` | The tests were run and passed; no protected path was touched. | no |
 | `TESTS_FAILING` | The tests ran and failed, or the test command exited non-zero. | yes |
 | `POLICY_VIOLATION` | A protected path — or the policy file itself — changed during the turn. | yes |
+| `TESTS_WEAKENED` | The turn weakened the tests: fewer tests or assertions, an added `skip`/`xfail`, an assertion that cannot fail, a lowered coverage threshold, deselected tests, a deleted test file. Deleting every test is caught here, not let through as "no tests". | yes² |
 | `UNVERIFIED_NO_TESTS` | No tests were found. Nothing was verified. | no¹ |
 | `UNVERIFIED_ENVIRONMENT` | The tests could not run (pytest missing, import error before collection, …). | no¹ |
 | `UNVERIFIED_TIMEOUT` | The test run exceeded its time budget. | no¹ |
 | `UNVERIFIED_UNKNOWN` | The outcome could not be classified. | no¹ |
 
 ¹ Blocks with `block_on_unverified: true`.
+² Unless `block_on_weakened_tests: false`, which turns it into an inline notice. The agent is told to
+restore the tests, or to say in its final message that the task requires removing them — only the
+user can approve that. The same detector runs in `skilllayer gate`; see [GATE.md](GATE.md).
 
 An `UNVERIFIED_*` verdict is never reported as a pass. The user sees an inline notice that the
 work was not verified, and the receipt records it as such. This is the rule the rest of
@@ -84,9 +88,10 @@ Observed by `skilllayer` itself:
 
 Not verified:
 
-- **That the tests are meaningful.** A passing suite is not proof of correctness. Tests an
-  agent weakened or deleted so that they pass are *reported* (an inline notice, the receipt)
-  but not blocked — you are the one who can judge whether that was legitimate.
+- **That the tests are meaningful.** A passing suite is not proof of correctness. Removed,
+  skipped or always-true checks are caught (`TESTS_WEAKENED`), but an expectation the agent
+  *changed* — `== 0.0` rewritten to `== -5.0` — is only reported as "test files were changed":
+  you are the one who can judge whether that was legitimate.
 - **Anything the agent says in prose.** It is not read.
 - **Task scope.** There is no "allowed paths for this task" check here, only protected paths.
   (The cooperative `vte_*` tools check scope, but the test result there is reported, not observed.)
@@ -108,6 +113,7 @@ verify:
   mode: block                 # block | warn — warn reports but never blocks
   max_consecutive_blocks: 2   # 1–10: after this many blocks the agent may stop (recorded UNVERIFIED)
   block_on_unverified: false  # true: also block when the tests were not observed to pass
+  block_on_weakened_tests: true  # false: report weakened tests instead of blocking
   test_timeout_seconds: 300   # 10–3600
 ```
 

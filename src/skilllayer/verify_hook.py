@@ -83,6 +83,7 @@ def config_from_policy(policy: dict[str, Any]) -> VerifyConfig:
         max_consecutive_blocks=verify["max_consecutive_blocks"],
         block_on_unverified=verify["block_on_unverified"],
         test_timeout_seconds=verify["test_timeout_seconds"],
+        block_on_weakened_tests=verify.get("block_on_weakened_tests", True),
         agent_scopes=tuple((name, tuple(rules)) for name, rules in policy.get("agent_scopes", {}).items()),
     )
 
@@ -161,6 +162,8 @@ def _observations(report: dict[str, Any]) -> list[str]:
             notes.append("test files were changed this turn (" + ", ".join(touched[:5]) + (", ..." if len(touched) > 5 else "") + ")")
         elif finding["kind"] == "agent_configuration_modified":
             notes.append(f"agent configuration was changed ({finding['path']})")
+        elif finding["kind"] == "tests_weakened" and not finding.get("blocking"):
+            notes.append("tests were weakened this turn: " + "; ".join(finding["described"][:3]))
     return notes
 
 

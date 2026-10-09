@@ -16,6 +16,10 @@
   threshold, tests deselected in configuration, a deleted test file. `--approve-test-changes` for a
   person's approval, recorded in the receipt. The walk-through gains a scene where the agent removes
   the failing assertion.
+- `skilllayer verify` (the Claude Code Stop hook) runs the test-weakening detector too: a turn that removes
+  tests or assertions, skips tests, asserts `True`, lowers a threshold or deletes test files is sent back
+  with verdict `TESTS_WEAKENED` — including a turn that deletes every test, which used to read as "no tests
+  found". `verify.block_on_weakened_tests: false` turns it into a notice; `--stats` counts these blocks.
 - Policy key `agent_scopes` and gate check `agent_scope`: each agent account may change only the paths
   the base policy gives it. `--author` takes the pull/merge request's author as the platform reports it
   (not commit metadata, not whoever re-ran the pipeline); `--approve-scope` records a person's approval.
