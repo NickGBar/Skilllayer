@@ -85,6 +85,15 @@ set, so a test moved from one file to another is not a weakening. A refactor tha
 tests is reported too — whether it is legitimate is a person's call, made with
 `--approve-test-changes` in a CI job they run, and recorded in the receipt.
 
+**Measured on 2026-10-09** with `scripts/measure_test_integrity.py` over the last 300 merged changes of
+flask, requests, httpx, click, express and axios (1,800 changes, 556 touching tests): 62 flagged
+(3.4% of all, 11.2% of those touching tests). By subject: 34 removed a feature, a deprecated API or
+reverted a change together with its tests — tests really went away, and a person's approval is the
+point; 14 merged a release branch; 13 restructured tests with fewer assertions (consolidation into
+`parametrize`, testing through a public API) — the real false positives, 0.7% of all changes; and
+1 genuinely disabled a failing test (`describe.skip` in express). New tests that arrive with a
+conditional `skipif`, moved test files and reformatted skips are not flagged.
+
 ## Receipts
 
 Each run writes a JSON receipt (default: the per-user SkillLayer data directory, outside the
