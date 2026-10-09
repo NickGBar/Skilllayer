@@ -51,6 +51,7 @@ from .verify import (
     observe_tests,
 )
 from .verify_hook import load_verify_config
+from .weakened_tests import check_test_integrity
 
 RECEIPT_VERSION = 1
 
@@ -287,11 +288,52 @@ def check_added_secrets(root: Path, base: str, head: str) -> dict[str, Any]:
     return result
 
 
-def check_tests(root: Path, *, test_command: list[str] | None, timeout_s: int) -> dict[str, Any]:
+_NODE_ID_RE = re.compile(r"^[\w./-]+\.py::[\w\[\]./:-]+$")
+
+
+def _failed_node_ids(tests: dict[str, Any]) -> list[str] | None:
+    """pytest node ids of the failing tests, or None when any label is not one (then the
+    whole command is re-run instead of a guess at which tests to target)."""
+    ids: list[str] = []
+    for label in tests.get("failed_tests") or []:
+        node = str(label).split(" — ", 1)[0].strip()
+        if not _NODE_ID_RE.match(node):
+            return None
+        ids.append(node)
+    return ids or None
+
+
+def check_tests(
+    root: Path, *, test_command: list[str] | None, timeout_s: int, flaky_reruns: int = 2, accept_flaky: bool = False,
+) -> dict[str, Any]:
+    """Run the tests; when they fail, re-run the failures up to ``flaky_reruns`` times.
+
+    A failure that passes on a re-run is not "tests failing" — but it is not a pass either: the
+    test is flaky, or it depends on what ran before it. Either way the change set was not shown
+    to work, so it stays NOT_VERIFIED unless the caller accepts flaky tests, which is recorded."""
     tests = observe_tests(root, test_command=test_command, timeout_s=timeout_s)
     verdict = _OUTCOME_TO_VERDICT.get(str(tests.get("outcome")), "UNVERIFIED_UNKNOWN")
     status = PASSED if verdict == VERIFIED else FAILED if verdict == TESTS_FAILING else NOT_VERIFIED
-    return {"name": "tests", "status": status, "verdict": verdict, **{k: v for k, v in tests.items() if k != "source"}, "source": "observed"}
+    result = {"name": "tests", "status": status, "verdict": verdict, **{k: v for k, v in tests.items() if k != "source"}, "source": "observed"}
+    command = shlex.split(str(tests.get("command") or ""))
+    if status != FAILED or flaky_reruns <= 0 or not command:
+        return result
+    nodes = _failed_node_ids(tests) if any("pytest" in part for part in command) else None
+    rerun_command = [*command, *nodes] if nodes else command
+    reruns: list[dict[str, Any]] = []
+    for attempt in range(1, flaky_reruns + 1):
+        again = observe_tests(root, test_command=rerun_command, timeout_s=timeout_s)
+        again_verdict = _OUTCOME_TO_VERDICT.get(str(again.get("outcome")), "UNVERIFIED_UNKNOWN")
+        reruns.append({"attempt": attempt, "outcome": again.get("outcome"), "failed_tests": (again.get("failed_tests") or [])[:10]})
+        if again_verdict == VERIFIED:
+            result["flaky_tests"] = nodes or ["(whole test command)"]
+            if accept_flaky:
+                result.update(status=PASSED, verdict="FLAKY", flaky_accepted_by_caller=True)
+            else:
+                result.update(status=NOT_VERIFIED, verdict="FLAKY", reason="flaky_tests")
+            break
+    result["reruns"] = reruns
+    return result
 
 
 def run_required_check(root: Path, name: str, command: str, *, timeout_s: int) -> dict[str, Any]:
@@ -351,6 +393,9 @@ def run_gate(
     mode: str = "block",
     max_seconds: int | None = None,
     approve_protected: bool = False,
+    approve_test_changes: bool = False,
+    flaky_reruns: int = 2,
+    accept_flaky: bool = False,
     receipt_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Judge the change set ``merge-base(base, head)..head``. Writes nothing; raises ValueError
@@ -416,6 +461,7 @@ def run_gate(
             policy_invalid=any(note.startswith("policy_ignored:") for note in policy_notes),
         ),
         check_added_secrets(root, fork_point, head_sha),
+        check_test_integrity(root, fork_point, head_sha, deleted_paths=deleted, approved=approve_test_changes),
     ]
     problems = tree_problems(root, head_sha, receipt_dir=receipt_dir)
     if problems:
@@ -424,7 +470,7 @@ def run_gate(
         results.append({"name": "tests", "status": NOT_VERIFIED, "reason": reason})
         results += [{"name": f"check:{name}", "command": _safe_line(cmd, 300), "status": NOT_VERIFIED, "reason": reason} for name, cmd in (checks or [])]
     else:
-        results.append(check_tests(root, test_command=test_command, timeout_s=timeout_s))
+        results.append(check_tests(root, test_command=test_command, timeout_s=timeout_s, flaky_reruns=flaky_reruns, accept_flaky=accept_flaky))
         results += [run_required_check(root, name, cmd, timeout_s=timeout_s) for name, cmd in (checks or [])]
     for result in results:
         limitations += result.pop("limitations", []) or []
@@ -541,6 +587,10 @@ def _check_line(result: dict[str, Any]) -> str:
     if name == "tests":
         detail = _tests_line(result) if result.get("outcome") else f"not run ({result.get('reason')})"
         lines = [f"  {mark} tests: {detail}"]
+        if result.get("flaky_tests"):
+            how = "accepted by the caller" if result.get("flaky_accepted_by_caller") else "flaky or order-dependent, not a pass"
+            lines.append(f"      failed, then passed on re-run — {how}: {', '.join(result['flaky_tests'][:5])}")
+            return "\n".join(lines)
         lines += [f"      {failed}" for failed in (result.get("failed_tests") or [])[:10]]
         return "\n".join(lines)
     if name == "protected_paths":
@@ -557,9 +607,48 @@ def _check_line(result: dict[str, Any]) -> str:
             return f"  ✓ secrets: none in {result.get('added_lines_scanned', 0)} added lines"
         shown = ", ".join(f"{f['file']}:{f['line']} ({f['pattern']}, commit {f['commit']})" for f in found[:5])
         return f"  ✗ secrets: {len(found)} added — {shown}"
+    if name == "test_integrity":
+        return _integrity_lines(result, mark, _INTEGRITY_EN, "test integrity")
     if status == NOT_VERIFIED:
         return f"  ? {name}: not verified ({result.get('reason')})"
     return f"  {mark} {name}: exit {result.get('exit_code')} ({(result.get('duration_ms') or 0) / 1000:.1f}s) — {result.get('command')}"
+
+
+_INTEGRITY_EN = {
+    "skip_added": "skip/xfail added",
+    "tautological_assertion": "assertion that cannot fail",
+    "tests_deselected": "tests deselected in configuration",
+    "threshold_lowered": "threshold lowered",
+    "tests_removed": "fewer tests",
+    "assertions_removed": "fewer assertions",
+    "test_file_deleted": "test file deleted",
+    "_ok": "suite not weakened",
+    "_approved": "weakened with caller approval",
+    "_failed": "signs the suite was weakened: {n}",
+    "_not_checked": "not checked",
+    "_counts": "test functions +{fa}/−{fr}, assertions +{aa}/−{ar}",
+    "_by": " by {n}",
+}
+
+
+def _integrity_lines(result: dict[str, Any], mark: str, text: dict[str, str], label: str, reason: Any = None) -> str:
+    """One check line, then one indented line per finding (shared by both languages)."""
+    if result["status"] == NOT_VERIFIED:
+        return f"  ? {label}: {text['_not_checked']} ({reason if reason is not None else result.get('reason')})"
+    found = result.get("findings") or []
+    counts = result.get("counts") or {}
+    funcs, asserts = counts.get("test_functions", {}), counts.get("assertions", {})
+    tally = text["_counts"].format(fa=funcs.get("added", 0), fr=funcs.get("removed", 0), aa=asserts.get("added", 0), ar=asserts.get("removed", 0))
+    if not found:
+        return f"  {mark} {label}: {text['_ok']} ({tally})"
+    head = text["_approved"] if result.get("approved_by_caller") else text["_failed"].format(n=len(found))
+    lines = [f"  {mark} {label}: {head} ({tally})"]
+    for item in found[:8]:
+        where = item["file"] + (f":{item['line']}" if item.get("line") else "")
+        detail = f" ({item['detail']})" if item.get("detail") else ""
+        by = text["_by"].format(n=item["count"]) if item.get("count") else ""
+        lines.append(f"      {text.get(item['kind'], item['kind'])}{by} — {where}{detail}")
+    return "\n".join(lines)
 
 
 def resolve_lang(explicit: str | None = None) -> str:
@@ -629,6 +718,23 @@ _REASONS_RU = {
     "permission_denied": "нет прав на запуск",
     "unparseable_command": "команду не удалось разобрать",
     "empty_command": "пустая команда",
+    "flaky_tests": "тесты нестабильны",
+}
+
+_INTEGRITY_RU = {
+    "skip_added": "добавлен skip или xfail",
+    "tautological_assertion": "ассерт, который не может упасть",
+    "tests_deselected": "тесты отключены в конфигурации",
+    "threshold_lowered": "понижен порог",
+    "tests_removed": "тестов стало меньше",
+    "assertions_removed": "ассертов стало меньше",
+    "test_file_deleted": "удалён файл тестов",
+    "_ok": "тесты не ослаблены",
+    "_approved": "ослаблены с разрешения",
+    "_failed": "признаков ослабления: {n}",
+    "_not_checked": "не проверена",
+    "_counts": "тестов +{fa}/−{fr}, ассертов +{aa}/−{ar}",
+    "_by": " на {n}",
 }
 
 _RECEIPT_REASONS_RU = {
@@ -692,6 +798,10 @@ def _check_line_ru(result: dict[str, Any]) -> str:
     if name == "tests":
         detail = _tests_detail_ru(result) if result.get("outcome") else f"не запускались ({_reason_ru(result.get('reason'))})"
         lines = [f"  {mark} тесты: {detail}"]
+        if result.get("flaky_tests"):
+            how = "нестабильность принята" if result.get("flaky_accepted_by_caller") else "нестабильны или зависят от порядка — это не «прошло»"
+            lines.append(f"      упали, затем прошли при перезапуске — {how}: {', '.join(result['flaky_tests'][:5])}")
+            return "\n".join(lines)
         lines += [f"      {failed}" for failed in (result.get("failed_tests") or [])[:10]]
         return "\n".join(lines)
     if name == "protected_paths":
@@ -710,6 +820,8 @@ def _check_line_ru(result: dict[str, Any]) -> str:
             return f"  ✓ секреты: не найдены (проверено добавленных строк: {result.get('added_lines_scanned', 0)})"
         shown = ", ".join(f"{f['file']}:{f['line']} ({f['pattern']}, коммит {f['commit']})" for f in found[:5])
         return f"  ✗ секреты: найдено {len(found)} — {shown}"
+    if name == "test_integrity":
+        return _integrity_lines(result, mark, _INTEGRITY_RU, "целостность тестов", reason=_reason_ru(result.get("reason")))
     label = "проверка " + name.removeprefix("check:")
     if status == NOT_VERIFIED:
         return f"  ? {label}: не выполнена ({_reason_ru(result.get('reason'))})"

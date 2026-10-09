@@ -360,3 +360,82 @@ def test_russian_limitations_are_translated_and_unknown_codes_kept():
     assert g._limitation_ru("output_tail_lines_withheld:3") == "скрыто строк вывода (могли содержать секреты): 3"
     assert g._limitation_ru("policy_ignored:.skilllayer-policy.yml:SCHEMA") == "политика не прочитана: .skilllayer-policy.yml:SCHEMA"
     assert g._limitation_ru("something_new:1") == "something_new:1"
+
+
+def test_a_change_that_deletes_the_failing_assertion_is_blocked(tmp_path):
+    """Tests go green because the check was removed, not because the code was fixed."""
+    repo = _repo(tmp_path)
+    _commit(repo, f"fix: tests pass\n\n{AI_TRAILER}", {
+        "src/auth.py": "def login():\n    return 'new'\n",
+        "tests/test_auth.py": "from src.auth import login\n\n\ndef test_login():\n    login()\n",
+    })
+    receipt = _gate(repo)
+    assert _check(receipt, "tests")["status"] == g.PASSED
+    integrity = _check(receipt, "test_integrity")
+    assert integrity["status"] == g.FAILED
+    assert [f["kind"] for f in integrity["findings"]] == ["assertions_removed"]
+    assert receipt["verdict"] == g.GATE_BLOCKED
+    assert "fewer assertions" in g.render_gate_report(receipt)
+    assert "ассертов стало меньше" in g.render_gate_report(receipt, lang="ru")
+
+
+def test_a_skipped_test_is_blocked_unless_the_caller_approves(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "skip", {
+        "src/auth.py": "def login():\n    return 'new'\n",
+        "tests/test_auth.py": "import pytest\nfrom src.auth import login\n\n\n@pytest.mark.skip(reason='later')\ndef test_login():\n    assert login() == 'old'\n",
+    })
+    assert _gate(repo)["verdict"] == g.GATE_BLOCKED
+    approved = _gate(repo, approve_test_changes=True)
+    assert _check(approved, "test_integrity")["approved_by_caller"] is True
+    assert approved["verdict"] == g.GATE_VERIFIED
+
+
+def test_adding_a_test_keeps_the_suite_intact(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "more tests", {"tests/test_more.py": "from src.auth import login\n\n\ndef test_again():\n    assert login() == 'old'\n"})
+    receipt = _gate(repo)
+    integrity = _check(receipt, "test_integrity")
+    assert integrity["status"] == g.PASSED and integrity["findings"] == []
+    assert integrity["counts"]["test_functions"] == {"added": 1, "removed": 0}
+    assert receipt["verdict"] == g.GATE_VERIFIED
+
+
+_FLAKY_TEST = (
+    "from pathlib import Path\n\n"
+    "MARK = Path(__file__).resolve().parents[2] / 'flaky.marker'  # outside the repository\n\n\n"
+    "def test_sometimes():\n"
+    "    if not MARK.exists():\n"
+    "        MARK.write_text('ran once')\n"
+    "        assert False, 'first run fails'\n"
+)
+
+
+def test_a_test_that_fails_then_passes_is_flaky_not_a_pass(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "flaky", {"tests/test_flaky.py": _FLAKY_TEST})
+    receipt = _gate(repo)
+    tests = _check(receipt, "tests")
+    assert tests["status"] == g.NOT_VERIFIED and tests["reason"] == "flaky_tests"
+    assert tests["flaky_tests"] == ["tests/test_flaky.py::test_sometimes"]
+    assert [r["outcome"] for r in tests["reruns"]] == ["PASSED"]
+    assert receipt["verdict"] == g.GATE_UNVERIFIED
+    assert "flaky or order-dependent" in g.render_gate_report(receipt)
+    assert "упали, затем прошли при перезапуске" in g.render_gate_report(receipt, lang="ru")
+
+
+def test_the_caller_can_accept_flaky_tests_and_it_is_recorded(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "flaky", {"tests/test_flaky.py": _FLAKY_TEST})
+    receipt = _gate(repo, accept_flaky=True)
+    tests = _check(receipt, "tests")
+    assert tests["status"] == g.PASSED and tests["flaky_accepted_by_caller"] is True
+    assert receipt["verdict"] == g.GATE_VERIFIED
+
+
+def test_a_real_failure_survives_the_reruns_and_reruns_can_be_turned_off(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "break", {"src/auth.py": "def login():\n    return 'new'\n"})
+    tests = _check(_gate(repo), "tests")
+    assert tests["status"] == g.FAILED and len(tests["reruns"]) == 2 and "flaky_tests" not in tests
+    assert "reruns" not in _check(_gate(repo, flaky_reruns=0), "tests")

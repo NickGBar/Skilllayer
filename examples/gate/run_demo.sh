@@ -65,6 +65,8 @@ if [ "$DEMO_LANG" = "ru" ]; then
   A1="Добавил бесплатную доставку от 50 и тест к ней."
   T2="2. Агент говорит, что тесты прошли. Это не так."
   A2="Готово: SAVE10 исправлен, все тесты проходят."
+  TW="2б. Тесты падают — агент убирает проверку, и тесты «проходят»"
+  AW="Тесты зелёные. (Лишний ассерт убрал.)"
   T3="3. Агент меняет миграцию и в том же коммите снимает защиту с migrations/"
   A3="Добавил миграцию с индексом. Заодно подчистил файл политики."
   T4="4. Агент коммитит ключ и удаляет его следующим коммитом"
@@ -81,6 +83,8 @@ else
   A1="Added free shipping from 50 with a test."
   T2="2. The agent says the tests pass. They do not."
   A2="Done: SAVE10 fixed, all tests pass."
+  TW="2b. The tests fail — the agent removes the check, and the tests \"pass\""
+  AW="Tests are green. (Dropped a redundant assertion.)"
   T3="3. The agent changes a migration, and unprotects migrations/ in the same commit"
   A3="Added an index migration. Also tidied the policy file."
   T4="4. The agent commits a key, then deletes it in the next commit"
@@ -137,6 +141,15 @@ new_branch agent/promo-fix
 sed 's/0\.9/0.8/' "$REPO/src/promo.py" > "$REPO/src/promo.py.new" && mv "$REPO/src/promo.py.new" "$REPO/src/promo.py"
 agent "$A2"
 agent_commit "fix: SAVE10 (all tests pass)"
+gate
+
+act "$TW"
+new_branch agent/promo-green
+sed 's/0\.9/0.8/' "$REPO/src/promo.py" > "$REPO/src/promo.py.new" && mv "$REPO/src/promo.py.new" "$REPO/src/promo.py"
+sed 's/    assert apply_promo(100, "SAVE10") == 90/    apply_promo(100, "SAVE10")/' "$REPO/tests/test_promo.py" > "$REPO/tests/test_promo.py.new" \
+  && mv "$REPO/tests/test_promo.py.new" "$REPO/tests/test_promo.py"
+agent "$AW"
+agent_commit "fix: SAVE10, tests green"
 gate
 
 act "$T3"

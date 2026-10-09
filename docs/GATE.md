@@ -15,9 +15,10 @@ The change set is `merge-base(base, head)..head`; `head` must be the checked-out
 
 | Check | Fails (blocks) when | Not verified when |
 | --- | --- | --- |
-| `tests` | the tests fail when the gate runs them | no tests found, environment error, timeout, or the checkout is not exactly `head` |
+| `tests` | the tests fail when the gate runs them, and still fail when the failures are re-run (`--flaky-reruns`, default 2) | no tests found, environment error, timeout, the checkout is not exactly `head`, or the failures passed on re-run — flaky or order-dependent, which is not a pass unless the caller passes `--accept-flaky` (recorded) |
 | `protected_paths` | a path protected by the policy **at the base commit** changed | — |
 | `secrets` | a commit in the range adds a critical or high-severity secret pattern outside test fixtures — even if a later commit deletes it, since history reaches the remote | the history is unavailable or too large to scan |
+| `test_integrity` | the change set weakens the suite: fewer test functions or assertions overall, a `skip`/`xfail` added, an assertion that cannot fail (`assert True`), a lowered coverage threshold, tests deselected in the runner or CI configuration, a test file deleted — unless the caller passes `--approve-test-changes` | the diff is unavailable or too large |
 | `check:<name>` | a required command (`--check name=command`) exits non-zero | the command is missing, cannot run, or times out |
 
 Notes that do not block: test files changed, agent configuration changed, key-shaped strings in
@@ -67,6 +68,22 @@ the same way. Error messages are English only for now.
   manual CI job that GitLab records a person running). The receipt says the change was approved.
 - **The gate runs the change set's code** (tests, checks), with the caller's permissions, exactly
   as running the tests yourself would. It does not sandbox it.
+- **Evidence comes from CI, not from a developer's machine.** The local pre-push hook is a
+  convenience: anyone can skip it with `git push --no-verify`, and a key on that machine is readable
+  by its owner. Make the CI job a required check and keep the signing key in a masked CI variable.
+- **The key protects receipts from the code under judgement — the agent and the change set — not
+  from whoever administers CI.** A CI administrator can read the key and sign anything; when that
+  matters, store the `--event-log` digests where CI administrators cannot edit them (your SIEM).
+
+## Weakened tests
+
+Told to make failing tests pass, an agent can fix the code — or delete the failing assertion,
+skip the test, or lower the coverage bar. CI then runs what is left and reports green.
+`test_integrity` reads the net diff and counts what the change set took away from the suite;
+every signal is a line-level pattern, no model judges intent. Counts are totals across the change
+set, so a test moved from one file to another is not a weakening. A refactor that really removes
+tests is reported too — whether it is legitimate is a person's call, made with
+`--approve-test-changes` in a CI job they run, and recorded in the receipt.
 
 ## Receipts
 
@@ -93,7 +110,8 @@ Receipts never contain a matched secret, a remote URL's credentials or e-mail ad
 A commit counts as AI-assisted when a trailer says so: `Co-Authored-By:` naming a known agent
 (Claude, Copilot, Cursor, Codex, GigaCode and others), or `Generated-by:`, `Assisted-by:`,
 `AI-Assisted:`, `AI-Agent:`. Agents are not obliged to add trailers, so this marks AI-assisted
-work; it never proves a commit is human-only. The gate applies the same checks to every commit.
+work; it never proves a commit is human-only. Control does not depend on the marking: the gate
+applies the same checks to every commit, marked or not. The marking only feeds the statistics.
 
 ## Limits
 
