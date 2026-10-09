@@ -118,3 +118,24 @@ def test_a_policy_with_verify_keys_still_works_for_the_other_workflows(tmp_path:
     (tmp_path / ".skilllayer-policy.yml").write_text(VERIFY_POLICY, encoding="utf-8")
     assert load_policy(tmp_path)["status"] == "POLICY_VALID"
     assert main(["policy", "check", "--repo", str(tmp_path), "--json"]) == 0
+
+
+def test_agent_scopes_map_accounts_to_path_rules() -> None:
+    from skilllayer.policy import evaluate_policy_text
+
+    result = evaluate_policy_text("version: 1\nagent_scopes:\n  claude-bot:\n    - src/\n    - tests/\n  agent[bot]:\n    - docs/\n", policy_path="p.yml")
+    assert result["status"] == "POLICY_VALID"
+    assert result["normalized_policy"]["agent_scopes"] == {"claude-bot": ["src/", "tests/"], "agent[bot]": ["docs/"]}
+
+
+def test_invalid_agent_scopes_are_refused() -> None:
+    from skilllayer.policy import evaluate_policy_text
+
+    for bad in (
+        "agent_scopes:\n  claude-bot:\n",            # empty scope
+        "agent_scopes:\n  bot:\n    - ../outside\n",  # escapes the repository
+        "agent_scopes:\n  bot:\n    - src/*.py\n",    # globs are not supported
+        "agent_scopes:\n  bot: src/\n",               # a string, not a list
+        "agent_scopes:\n  -bot:\n    - src/\n",       # not an account name
+    ):
+        assert evaluate_policy_text("version: 1\n" + bad, policy_path="p.yml")["status"] == "POLICY_INVALID", bad

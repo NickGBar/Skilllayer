@@ -11,25 +11,34 @@ skilllayer-gate:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   variables:
     GIT_DEPTH: "0"  # the gate needs the base commit and the history in between
-  script:
+  before_script:
     - pip install "git+https://github.com/NickGBar/Skilllayer.git"  # or your internal mirror
     - pip install -r requirements.txt pytest                         # the project's own test deps
+    # The merge request's author, for agent_scopes (GitLab has no predefined variable for it).
+    # READ_API_TOKEN is a masked variable holding a read_api token. Written from the API docs;
+    # not yet run in real CI.
     - >
-      skilllayer gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+      MR_AUTHOR=$(python -c "import json, os, urllib.request;
+      r = urllib.request.Request(os.environ['CI_API_V4_URL'] + '/projects/' + os.environ['CI_PROJECT_ID']
+      + '/merge_requests/' + os.environ['CI_MERGE_REQUEST_IID'], headers={'PRIVATE-TOKEN': os.environ['READ_API_TOKEN']});
+      print(json.load(urllib.request.urlopen(r))['author']['username'])")
+  script:
+    - >
+      skilllayer gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --author "$MR_AUTHOR"
       --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl
   artifacts:
     when: always
     paths:
       - gate-receipts/
 
-# A change to a protected path (migrations, CI config, the policy itself) fails the job above.
-# When a person decides it is legitimate, they run this manual job; GitLab records who did.
+# A change the job above refuses for a reason a person can overrule — a protected path, removed
+# tests, an agent outside its scope — goes through when a person runs this manual job after
+# reviewing it. GitLab records who ran it; the receipt records what was approved.
 skilllayer-gate-approved:
   extends: skilllayer-gate
   when: manual
   script:
-    - pip install "git+https://github.com/NickGBar/Skilllayer.git"
-    - pip install -r requirements.txt pytest
     - >
-      skilllayer gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --approve-protected
+      skilllayer gate --base "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --author "$MR_AUTHOR"
+      --approve-protected --approve-test-changes --approve-scope
       --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl

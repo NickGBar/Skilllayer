@@ -83,6 +83,7 @@ def config_from_policy(policy: dict[str, Any]) -> VerifyConfig:
         max_consecutive_blocks=verify["max_consecutive_blocks"],
         block_on_unverified=verify["block_on_unverified"],
         test_timeout_seconds=verify["test_timeout_seconds"],
+        agent_scopes=tuple((name, tuple(rules)) for name, rules in policy.get("agent_scopes", {}).items()),
     )
 
 
