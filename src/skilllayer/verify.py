@@ -36,12 +36,13 @@ RECEIPT_VERSION = 1
 VERIFIED = "VERIFIED"
 TESTS_FAILING = "TESTS_FAILING"
 POLICY_VIOLATION = "POLICY_VIOLATION"
+TESTS_WEAKENED = "TESTS_WEAKENED"
 UNVERIFIED_NO_TESTS = "UNVERIFIED_NO_TESTS"
 UNVERIFIED_ENVIRONMENT = "UNVERIFIED_ENVIRONMENT"
 UNVERIFIED_TIMEOUT = "UNVERIFIED_TIMEOUT"
 UNVERIFIED_UNKNOWN = "UNVERIFIED_UNKNOWN"
 
-BLOCKING_VERDICTS = frozenset({TESTS_FAILING, POLICY_VIOLATION})
+BLOCKING_VERDICTS = frozenset({TESTS_FAILING, POLICY_VIOLATION, TESTS_WEAKENED})
 UNVERIFIED_VERDICTS = frozenset(
     {UNVERIFIED_NO_TESTS, UNVERIFIED_ENVIRONMENT, UNVERIFIED_TIMEOUT, UNVERIFIED_UNKNOWN}
 )
@@ -77,6 +78,7 @@ class VerifyConfig:
     max_consecutive_blocks: int = 2
     block_on_unverified: bool = False
     test_timeout_seconds: int = 300
+    block_on_weakened_tests: bool = True
     agent_scopes: tuple[tuple[str, tuple[str, ...]], ...] = ()  # (account, path rules), for skilllayer gate
 
     def effective_protected(self) -> tuple[str, ...]:
@@ -467,6 +469,21 @@ def verify_repo(
         findings.append({"kind": "tests_failing", "outcome": tests.get("outcome")})
     else:
         findings.append({"kind": "tests_unverified", "verdict": verdict, "outcome": tests.get("outcome")})
+    # Imported here: weakened_tests builds on this module's git and path helpers.
+    from .weakened_tests import check_test_integrity, describe
+
+    integrity = check_test_integrity(root, baseline_head or "HEAD", None, deleted_paths=changes["deleted"])
+    weakened = integrity.get("findings") or []
+    if weakened:
+        findings.append({
+            "kind": "tests_weakened", "blocking": config.block_on_weakened_tests,
+            "findings": weakened[:10], "described": [describe(item) for item in weakened[:10]],
+        })
+        # Deleting every test turns "tests fail" into "no tests found" — that must not be a way out.
+        if config.block_on_weakened_tests and verdict != TESTS_FAILING:
+            verdict = TESTS_WEAKENED
+    elif integrity["status"] == "not_verified":
+        changes["limitations"] = [*changes["limitations"], f"test_integrity_not_checked:{integrity.get('reason')}"]
     for path in protected_hits:
         findings.append({"kind": "protected_path_modified", "path": path})
     if protected_hits:
@@ -532,6 +549,9 @@ def render_agent_message(report: dict[str, Any], *, attempt: int, max_attempts: 
         elif kind == "test_files_touched":
             touched = finding["modified"] + finding["deleted"]
             lines.append(f"- Test files were changed this turn: {', '.join(touched)} — do not weaken tests to make them pass.")
+        elif kind == "tests_weakened" and finding.get("blocking"):
+            lines.append("- Tests were weakened this turn (observed in the diff) — restore them. If the task really requires removing or skipping tests, say so in your final message: only the user can approve it.")
+            lines.extend(f"    {line}" for line in finding["described"])
         elif kind == "agent_configuration_modified":
             lines.append(f"- Agent configuration modified: {finding['path']}")
     lines.append("Fix the issues above, then finish. Do not report success without re-running the tests.")
@@ -553,6 +573,8 @@ def render_user_summary(report: dict[str, Any], *, attempt: int, max_attempts: i
             parts.append(f"tests not verified ({finding['verdict']})")
         elif finding["kind"] == "protected_path_modified":
             protected.append(finding["path"])
+        elif finding["kind"] == "tests_weakened" and finding.get("blocking"):
+            parts.append("tests weakened (" + finding["described"][0][:140] + ")")
     if protected:
         parts.append("protected path modified: " + ", ".join(protected[:3]) + (", ..." if len(protected) > 3 else ""))
     return f"skilllayer sent the agent back to work (attempt {attempt} of {max_attempts}): " + ("; ".join(parts) or "verification found problems") + "."
@@ -571,6 +593,8 @@ def render_human_report(report: dict[str, Any]) -> str:
             lines.append(f"  note: test files touched — modified={finding['modified']} deleted={finding['deleted']}")
         elif finding["kind"] == "agent_configuration_modified":
             lines.append(f"  note: agent configuration modified — {finding['path']}")
+        elif finding["kind"] == "tests_weakened":
+            lines.append("  tests weakened: " + "; ".join(finding["described"][:5]))
     if report["limitations"]:
         lines.append(f"  limitations: {report['limitations']}")
     if verdict in UNVERIFIED_VERDICTS:
@@ -641,6 +665,7 @@ def compute_stats(events: list[dict[str, Any]]) -> dict[str, Any]:
         "blocked": count(lambda e: e.get("blocked")),
         "blocked_tests_failing": count(lambda e: e.get("blocked") and e.get("verdict") == TESTS_FAILING),
         "blocked_policy_violation": count(lambda e: e.get("blocked") and e.get("verdict") == POLICY_VIOLATION),
+        "blocked_tests_weakened": count(lambda e: e.get("blocked") and e.get("verdict") == TESTS_WEAKENED),
         "recovered_after_block": recovered,
         "loop_guard_allowed": count(lambda e: e.get("loop_guard")),
         "unverified": count(lambda e: e.get("verdict") in UNVERIFIED_VERDICTS),

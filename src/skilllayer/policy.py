@@ -16,7 +16,7 @@ _MAP_KEYS = frozenset({"safe_change", "release", "verify"})
 _MAP_OF_LISTS_KEYS = frozenset({"agent_scopes"})
 _ACCOUNT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,99}")
 VERIFY_MODES = {"block", "warn"}
-VERIFY_KEYS = {"mode", "max_consecutive_blocks", "block_on_unverified", "test_timeout_seconds"}
+VERIFY_KEYS = {"mode", "max_consecutive_blocks", "block_on_unverified", "test_timeout_seconds", "block_on_weakened_tests"}
 DEFAULT_POLICY = {
     "version": 1,
     "required_checks": ["tests", "secrets"],
@@ -27,7 +27,7 @@ DEFAULT_POLICY = {
     # files or directory prefixes (trailing "/"); no globs. The test command is never
     # policy: this file is inside the repository being judged and must not execute anything.
     "protected_paths": [],
-    "verify": {"mode": "block", "max_consecutive_blocks": 2, "block_on_unverified": False, "test_timeout_seconds": 300},
+    "verify": {"mode": "block", "max_consecutive_blocks": 2, "block_on_unverified": False, "test_timeout_seconds": 300, "block_on_weakened_tests": True},
     # skilllayer gate: an agent's account may change only these paths (repo-relative files or
     # directory prefixes). Keyed by the account the platform reports as the change's author.
     "agent_scopes": {},
@@ -197,6 +197,8 @@ def _validate_verify(verify: dict[str, Any]) -> list[dict[str, Any]]:
             errors.append(_error("invalid_value", f"verify.{key} must be an integer between {low} and {high}"))
     if not isinstance(verify.get("block_on_unverified", False), bool):
         errors.append(_error("invalid_type", "verify.block_on_unverified must be boolean"))
+    if not isinstance(verify.get("block_on_weakened_tests", True), bool):
+        errors.append(_error("invalid_type", "verify.block_on_weakened_tests must be boolean"))
     return errors
 
 

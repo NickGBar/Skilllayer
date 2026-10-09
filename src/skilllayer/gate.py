@@ -51,6 +51,7 @@ from .verify import (
     observe_tests,
 )
 from .verify_hook import load_verify_config
+from .weakened_tests import LABELS as INTEGRITY_LABELS
 from .weakened_tests import check_test_integrity
 
 RECEIPT_VERSION = 1
@@ -654,13 +655,7 @@ def _check_line(result: dict[str, Any]) -> str:
 
 
 _INTEGRITY_EN = {
-    "skip_added": "skip/xfail added",
-    "tautological_assertion": "assertion that cannot fail",
-    "tests_deselected": "tests deselected in configuration",
-    "threshold_lowered": "threshold lowered",
-    "tests_removed": "fewer tests",
-    "assertions_removed": "fewer assertions",
-    "test_file_deleted": "test file deleted",
+    **INTEGRITY_LABELS,
     "_ok": "suite not weakened",
     "_approved": "weakened with caller approval",
     "_failed": "signs the suite was weakened: {n}",

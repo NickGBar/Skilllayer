@@ -52,8 +52,30 @@ _DESELECT = re.compile(
 )
 
 
-def _diff(root, base: str, head: str) -> str | None:
-    proc = _git(root, "-c", "core.quotepath=false", "diff", "-U0", "--no-color", "--no-renames", "--no-ext-diff", base, head, timeout=120)
+# English labels for each finding kind (the gate adds its own Russian ones).
+LABELS = {
+    "skip_added": "skip/xfail added",
+    "tautological_assertion": "assertion that cannot fail",
+    "tests_deselected": "tests deselected in configuration",
+    "threshold_lowered": "threshold lowered",
+    "tests_removed": "fewer tests",
+    "assertions_removed": "fewer assertions",
+    "test_file_deleted": "test file deleted",
+}
+
+
+def describe(item: dict[str, Any]) -> str:
+    """One finding as a line: what, by how much, where."""
+    where = item["file"] + (f":{item['line']}" if item.get("line") else "")
+    by = f" by {item['count']}" if item.get("count") else ""
+    detail = f" ({item['detail']})" if item.get("detail") else ""
+    return f"{LABELS.get(item['kind'], item['kind'])}{by} — {where}{detail}"
+
+
+def _diff(root, base: str, head: str | None) -> str | None:
+    """``base..head``, or ``base`` against the working tree when ``head`` is None."""
+    refs = [base] if head is None else [base, head]
+    proc = _git(root, "-c", "core.quotepath=false", "diff", "-U0", "--no-color", "--no-renames", "--no-ext-diff", *refs, timeout=120)
     if proc is None or proc.returncode != 0:
         return None
     return proc.stdout
@@ -174,7 +196,7 @@ def analyze_diff(diff: str, *, deleted_paths: list[str] | None = None) -> dict[s
     }
 
 
-def check_test_integrity(root, base: str, head: str, *, deleted_paths: list[str] | None = None, approved: bool = False) -> dict[str, Any]:
+def check_test_integrity(root, base: str, head: str | None, *, deleted_paths: list[str] | None = None, approved: bool = False) -> dict[str, Any]:
     """The gate check: failed when the change set weakens the suite, unless the caller approved it."""
     diff = _diff(root, base, head)
     if diff is None:

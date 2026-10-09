@@ -284,10 +284,11 @@ def test_the_hook_ends_a_slow_test_run_before_the_harness_would_kill_it(tmp_path
     assert "test_timeout_clamped_to_hook_budget" in receipt["limitations"]
 
 
-def test_passing_tests_that_the_agent_weakened_are_allowed_but_the_user_is_told(tmp_path):
-    """The agent 'fixes' a failing test by rewriting it. Nothing is blocked — the tests do
-    pass — but the one person who can judge whether that was legitimate must hear about it."""
-    repo = _repo(tmp_path)
+def test_in_warning_mode_weakened_tests_are_allowed_but_the_user_is_told(tmp_path):
+    """The agent 'fixes' a failing test by rewriting it. With block_on_weakened_tests off nothing
+    is blocked — the tests do pass — but the one person who can judge whether that was
+    legitimate must hear about it. (By default the stop is blocked: see the tests below.)"""
+    repo = _repo(tmp_path, policy="version: 1\nverify:\n  block_on_weakened_tests: false\n")
     h.handle_prompt_submit(_payload(repo))
     (repo / "tests/test_auth.py").write_text("def test_login():\n    assert True\n")
     outcome = h.handle_stop(_payload(repo))
@@ -338,3 +339,36 @@ def test_a_protected_path_block_says_revert_first(tmp_path):
     assert "Protected path modified: migrations/002.sql — revert it." in reason
     assert "only the user can approve it" in reason
     assert "ask the user to approve" not in reason
+
+
+def test_an_agent_that_deletes_the_failing_assertion_is_sent_back(tmp_path):
+    """The tests now pass because the check is gone; the Stop is blocked anyway."""
+    repo = _repo(tmp_path)
+    h.handle_prompt_submit(_payload(repo))
+    _break(repo)
+    (repo / "tests/test_auth.py").write_text("from src.auth import login\n\n\ndef test_login():\n    login()\n")
+    outcome = h.handle_stop(_payload(repo))
+    reason = _reason(outcome)
+    assert reason is not None
+    assert "Tests were weakened this turn" in reason
+    assert "fewer assertions by 1 — tests/test_auth.py:5" in reason
+    assert "tests weakened" in json.loads(outcome.stdout)["systemMessage"]
+
+
+def test_deleting_every_test_is_not_a_way_out(tmp_path):
+    """No tests found would be UNVERIFIED, which lets the stop through; the deletion blocks it."""
+    repo = _repo(tmp_path)
+    h.handle_prompt_submit(_payload(repo))
+    _break(repo)
+    (repo / "tests/test_auth.py").unlink()
+    reason = _reason(h.handle_stop(_payload(repo)))
+    assert reason is not None and "test file deleted — tests/test_auth.py" in reason
+
+
+def test_policy_can_make_weakened_tests_a_warning(tmp_path):
+    repo = _repo(tmp_path, policy="version: 1\nverify:\n  block_on_weakened_tests: false\n")
+    h.handle_prompt_submit(_payload(repo))
+    (repo / "tests/test_auth.py").write_text("import pytest\nfrom src.auth import login\n\n\n@pytest.mark.skip(reason='later')\ndef test_login():\n    assert login() == 'old'\n")
+    outcome = h.handle_stop(_payload(repo))
+    assert _reason(outcome) is None
+    assert "tests were weakened this turn: skip/xfail added" in json.loads(outcome.stdout)["systemMessage"]
