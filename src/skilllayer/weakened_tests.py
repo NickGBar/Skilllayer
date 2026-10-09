@@ -106,9 +106,13 @@ def analyze_diff(diff: str, *, deleted_paths: list[str] | None = None) -> dict[s
     findings: list[dict[str, Any]] = []
     thresholds: dict[tuple[str, str], dict[str, float]] = {}
     first_removed: dict[str, tuple[str, int]] = {}  # kind -> where the first removal was
+    added_lines: dict[str, list[tuple[int, str]]] = {}  # test file -> its added lines, in order
+    added_skips: list[tuple[str, int]] = []  # (test file, index into added_lines)
     for path, sign, line_no, text in _iter_changes(diff):
         idx = 0 if sign == "+" else 1
         if is_test_path(path):
+            if sign == "+":
+                added_lines.setdefault(path, []).append((line_no, text))
             if _TEST_FUNC.search(text):
                 counts["test_functions"][idx] += 1
                 if sign == "-":
@@ -120,7 +124,7 @@ def analyze_diff(diff: str, *, deleted_paths: list[str] | None = None) -> dict[s
             if _SKIP.search(text):
                 counts["skips"][idx] += 1
                 if sign == "+":
-                    findings.append(_finding("skip_added", path, line_no, text.strip()))
+                    added_skips.append((path, len(added_lines[path]) - 1))
             if sign == "+" and _TAUTOLOGY.search(text):
                 findings.append(_finding("tautological_assertion", path, line_no, text.strip()))
         if _CONFIG_FILES.search(path):
@@ -132,15 +136,38 @@ def analyze_diff(diff: str, *, deleted_paths: list[str] | None = None) -> dict[s
     for (path, key), values in thresholds.items():
         if "old" in values and "new" in values and values["new"] < values["old"]:
             findings.append(_finding("threshold_lowered", path, None, f"{key}: {values['old']:g} → {values['new']:g}"))
+    # A skip on a test this change set adds (a new test that does not run on Windows, say) takes
+    # nothing away from the suite. Of the rest, only skips beyond those removed count: a
+    # reformat that removes and re-adds the same marker is not a weakening.
+    weakening_skips: list[tuple[str, int, str]] = []
+    for path, index in added_skips:
+        line_no, text = added_lines[path][index]
+        # The def it decorates can sit far below: a multi-line skipif(...), a long parametrize
+        # list. Follow the unbroken block of added lines down to the first test function.
+        decorates_new_test, previous = False, line_no
+        for number, later in added_lines[path][index + 1:index + 81]:
+            if number != previous + 1:
+                break
+            previous = number
+            if _TEST_FUNC.search(later):
+                decorates_new_test = True
+                break
+        if decorates_new_test:
+            continue
+        weakening_skips.append((path, line_no, text))
+    if len(weakening_skips) > counts["skips"][1]:
+        findings.extend(_finding("skip_added", path, line_no, text.strip()) for path, line_no, text in weakening_skips)
     # Net totals across the whole change set, so a test moved between files is not counted.
     for kind, name in (("tests_removed", "test_functions"), ("assertions_removed", "assertions")):
         added, removed = counts[name]
         if removed > added:
             path, line_no = first_removed[kind]
             findings.append({**_finding(kind, path, line_no), "count": removed - added})
-    for path in deleted_paths or []:
-        if is_test_path(path):
-            findings.append(_finding("test_file_deleted", path))
+    if counts["test_functions"][1] > counts["test_functions"][0]:
+        # A deleted test file counts only when the suite shrank: otherwise its tests moved.
+        for path in deleted_paths or []:
+            if is_test_path(path):
+                findings.append(_finding("test_file_deleted", path))
     return {
         "counts": {name: {"added": pair[0], "removed": pair[1]} for name, pair in counts.items()},
         "findings": findings[:50],

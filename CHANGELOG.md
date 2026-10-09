@@ -16,6 +16,9 @@
   threshold, tests deselected in configuration, a deleted test file. `--approve-test-changes` for a
   person's approval, recorded in the receipt. The walk-through gains a scene where the agent removes
   the failing assertion.
+- `test_integrity` false positives cut after measuring it on 1,800 merged changes of six projects
+  (`scripts/measure_test_integrity.py`): a skip on a test the change adds, a removed-and-re-added skip and a
+  test file moved elsewhere no longer count. Flag rate 3.4% of changes, 0.7% false positives; see docs/GATE.md.
 - `skilllayer gate` re-runs failing tests (`--flaky-reruns`, default 2). A failure that then passes is
   reported as flaky or order-dependent — not verified, so not a pass — unless the caller passes
   `--accept-flaky`, which the receipt records.

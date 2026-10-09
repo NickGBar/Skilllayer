@@ -54,9 +54,26 @@ def test_deselecting_tests_in_ci_or_config_is_found():
     assert _kinds(ci) == ["tests_deselected"] and _kinds(k) == ["tests_deselected"]
 
 
-def test_a_deleted_test_file_is_reported():
-    result = analyze_diff("", deleted_paths=["tests/test_promo.py", "src/promo.py"])
-    assert [(f["kind"], f["file"]) for f in result["findings"]] == [("test_file_deleted", "tests/test_promo.py")]
+def test_a_deleted_test_file_is_reported_when_the_suite_shrinks():
+    diff = _diff("tests/test_promo.py", ["def test_cap():", "    assert apply(1000) == 950"], [])
+    result = analyze_diff(diff, deleted_paths=["tests/test_promo.py", "src/promo.py"])
+    assert ("test_file_deleted", "tests/test_promo.py") in [(f["kind"], f["file"]) for f in result["findings"]]
+
+
+def test_a_test_file_moved_elsewhere_is_not_a_deletion():
+    tests = ["def test_cap():", "    assert apply(1000) == 950"]
+    diff = _diff("tests/test_promo.py", tests, []) + _diff("tests/promo/test_cap.py", [], tests, new_file=True)
+    assert analyze_diff(diff, deleted_paths=["tests/test_promo.py"])["findings"] == []
+
+
+def test_a_new_test_that_arrives_with_a_conditional_skip_is_not_a_weakening():
+    added = ["@pytest.mark.skipif(sys.platform == 'win32', reason='posix only')", "def test_pager():", "    assert run() == 0"]
+    assert analyze_diff(_diff("tests/test_pager.py", [], added))["findings"] == []
+
+
+def test_a_reformat_that_removes_and_re_adds_a_skip_is_not_a_weakening():
+    diff = _diff("tests/test_promo.py", ["@pytest.mark.skip(reason='x')"], ['@pytest.mark.skip(reason="x")'])
+    assert analyze_diff(diff)["findings"] == []
 
 
 def test_code_changes_and_new_tests_are_clean():
@@ -68,3 +85,21 @@ def test_code_changes_and_new_tests_are_clean():
 
 def test_assert_lines_outside_test_files_do_not_count():
     assert analyze_diff(_diff("src/promo.py", ["    assert total >= 0"], []))["findings"] == []
+
+
+def test_a_multi_line_skipif_on_a_new_test_is_not_a_weakening():
+    added = ["@pytest.mark.skipif(", "    shutil.which('cat') is None,", "    reason='cat not available',", ")", "def test_pager_cat():", "    assert run() == 0"]
+    assert analyze_diff(_diff("tests/test_pager.py", [], added))["findings"] == []
+
+
+def test_skipping_an_existing_block_of_tests_is_still_caught():
+    """From express: describe('…') became describe.skip('…') with a comment that the test fails."""
+    diff = _diff("test/res.status.js", ["    describe('when code is undefined', function () {"],
+                 ["    // This test fails in node 4.0.0", "    describe.skip('when code is undefined', function () {"])
+    assert [f["kind"] for f in analyze_diff(diff)["findings"]] == ["skip_added"]
+
+
+def test_a_skipif_above_a_long_parametrize_on_a_new_test_is_not_a_weakening():
+    cases = [f"        ({i}, {i}),"  for i in range(20)]
+    added = ["@pytest.mark.skipif(WIN, reason='posix only')", "@pytest.mark.parametrize(", "    ('a', 'b'),", "    [", *cases, "    ],", ")", "def test_many(a, b):", "    assert a == b"]
+    assert analyze_diff(_diff("tests/test_many.py", [], added))["findings"] == []
