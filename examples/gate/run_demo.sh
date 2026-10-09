@@ -4,6 +4,7 @@
 # are executed, every commit is scanned, receipts are sealed with a demo key and then checked.
 #
 #   examples/gate/run_demo.sh            # DEMO_PAUSE=1 slows it down for a recording
+#   DEMO_LANG=ru examples/gate/run_demo.sh   # narration and gate output in Russian
 #
 # Needs the `skilllayer` command (or SKILLLAYER_BIN=...) and a Python with pytest
 # (DEMO_PYTHON=..., default: this checkout's .venv, then python3).
@@ -58,10 +59,44 @@ git -C "$REPO" config user.name dev
 git -C "$REPO" add -A
 git -C "$REPO" commit -qm "shop"
 
+DEMO_LANG="${DEMO_LANG:-en}"
+if [ "$DEMO_LANG" = "ru" ]; then
+  T1="1. Агент делает задачу честно"
+  A1="Добавил бесплатную доставку от 50 и тест к ней."
+  T2="2. Агент говорит, что тесты прошли. Это не так."
+  A2="Готово: SAVE10 исправлен, все тесты проходят."
+  T3="3. Агент меняет миграцию и в том же коммите снимает защиту с migrations/"
+  A3="Добавил миграцию с индексом. Заодно подчистил файл политики."
+  T4="4. Агент коммитит ключ и удаляет его следующим коммитом"
+  A4="Платежи подключены. (Файл настроек снова удалил, смотреть не на что.)"
+  T5="5. Квитанции: на чём основан каждый вердикт"
+  EXIT_LEGEND="0 — принято, 2 — заблокировано, 3 — не проверено"
+  EXIT_WORD="код выхода"
+  TAMPER="(кто-то правит квитанцию, чтобы она ручалась за другой коммит)"
+  SIEM="одна строка на запуск для SIEM"
+  AGENT="агент>"
+else
+  DEMO_LANG=en
+  T1="1. The agent does the task properly"
+  A1="Added free shipping from 50 with a test."
+  T2="2. The agent says the tests pass. They do not."
+  A2="Done: SAVE10 fixed, all tests pass."
+  T3="3. The agent changes a migration, and unprotects migrations/ in the same commit"
+  A3="Added an index migration. Also tidied the policy file."
+  T4="4. The agent commits a key, then deletes it in the next commit"
+  A4="Payments wired up. (Removed the settings file again, nothing to see.)"
+  T5="5. The receipts: the evidence each verdict rests on"
+  EXIT_LEGEND="0 accepted, 2 blocked, 3 unverified"
+  EXIT_WORD="exit"
+  TAMPER="(someone edits the receipt to vouch for a different commit)"
+  SIEM="one line per run for the SIEM"
+  AGENT="agent>"
+fi
+
 if [ -t 1 ]; then B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'; else B=""; D=""; R=""; fi
 pause() { [ "${DEMO_PAUSE:-0}" != "0" ] && sleep "${DEMO_PAUSE}"; return 0; }
 act() { printf '\n%s== %s ==%s\n' "$B" "$1" "$R"; pause; }
-agent() { printf '%sagent>%s %s\n' "$D" "$R" "$1"; pause; }
+agent() { printf '%s%s%s %s\n' "$D" "$AGENT" "$R" "$1"; pause; }
 new_branch() { git -C "$REPO" switch -q main; git -C "$REPO" switch -q -c "$1"; }
 agent_commit() {
   git -C "$REPO" add -A
@@ -73,12 +108,12 @@ export SKILLLAYER_RECEIPT_KEY="demo-key" SKILLLAYER_RECEIPT_KEY_ID="demo"
 gate() {
   printf '%s$ skilllayer gate --base main%s\n' "$D" "$R"
   (cd "$REPO" && "$SKL" gate --base main --test-command "$PY -m pytest -q -p no:cacheprovider" \
-      --receipt-dir "$RECEIPTS" --event-log "$RECEIPTS/events.jsonl" "$@")
-  printf '%s(exit %s: %s)%s\n' "$B" "$?" "0 accepted, 2 blocked, 3 unverified" "$R"
+      --receipt-dir "$RECEIPTS" --event-log "$RECEIPTS/events.jsonl" --lang "$DEMO_LANG" "$@")
+  printf '%s(%s %s: %s)%s\n' "$B" "$EXIT_WORD" "$?" "$EXIT_LEGEND" "$R"
   pause
 }
 
-act "1. The agent does the task properly"
+act "$T1"
 new_branch agent/free-shipping
 cat >> "$REPO/src/promo.py" <<'PY'
 
@@ -93,40 +128,40 @@ def test_free_shipping_from_50():
     from src.promo import shipping
     assert shipping(50) == 0 and shipping(49) == 5
 PY
-agent "Added free shipping from 50 with a test."
+agent "$A1"
 agent_commit "feat: free shipping from 50"
 gate
 
-act "2. The agent says the tests pass. They do not."
+act "$T2"
 new_branch agent/promo-fix
 sed 's/0\.9/0.8/' "$REPO/src/promo.py" > "$REPO/src/promo.py.new" && mv "$REPO/src/promo.py.new" "$REPO/src/promo.py"
-agent "Done: SAVE10 fixed, all tests pass."
+agent "$A2"
 agent_commit "fix: SAVE10 (all tests pass)"
 gate
 
-act "3. The agent changes a migration, and unprotects migrations/ in the same commit"
+act "$T3"
 new_branch agent/index
 printf 'create index orders_total on orders(total);\n' > "$REPO/migrations/002_index.sql"
 printf 'version: 1\nprotected_paths: []\n' > "$REPO/.skilllayer-policy.yml"
-agent "Added an index migration. Also tidied the policy file."
+agent "$A3"
 agent_commit "perf: index orders.total"
 gate
 
-act "4. The agent commits a key, then deletes it in the next commit"
+act "$T4"
 new_branch agent/payments
 KEY="AKIA""IOSFODNN7EXAMPLE"  # the documented AWS example key, split so this file never holds it whole
 printf 'PAYMENTS_KEY = "%s"\n' "$KEY" > "$REPO/src/settings.py"
 agent_commit "feat: payments settings"
 rm "$REPO/src/settings.py"
-agent "Payments wired up. (Removed the settings file again, nothing to see.)"
+agent "$A4"
 agent_commit "chore: remove settings"
 gate
 
-act "5. The receipts: the evidence each verdict rests on"
+act "$T5"
 ls -1 "$RECEIPTS" | sed 's/^/  /'
 first="$(ls "$RECEIPTS"/*-VERIFIED.json | head -1)"
 printf '%s$ skilllayer gate --verify-receipt %s%s\n' "$D" "$(basename "$first")" "$R"
-"$SKL" gate --verify-receipt "$first"
+"$SKL" gate --verify-receipt "$first" --lang "$DEMO_LANG"
 "$PY" - "$first" <<'PY'
 import json, sys
 path = sys.argv[1]
@@ -137,12 +172,13 @@ receipt["reasons"] = []
 receipt["head"]["sha"] = "0" * 40  # pretend a different commit was the one that passed
 json.dump(receipt, open(path, "w"))
 PY
-printf '%s(someone edits the receipt to vouch for a different commit)%s\n' "$D" "$R"
-"$SKL" gate --verify-receipt "$first"
-printf '\n  one line per run for the SIEM (%s):\n' "events.jsonl"
-"$PY" - "$RECEIPTS/events.jsonl" <<'PY'
+printf '%s%s%s\n' "$D" "$TAMPER" "$R"
+"$SKL" gate --verify-receipt "$first" --lang "$DEMO_LANG"
+printf '\n  %s (%s):\n' "$SIEM" "events.jsonl"
+"$PY" - "$RECEIPTS/events.jsonl" "$DEMO_LANG" <<'PY'
 import json, sys
+head, ai = ("коммит", "с пометкой ИИ:") if sys.argv[2] == "ru" else ("head", "ai-assisted commits")
 for line in open(sys.argv[1]):
     e = json.loads(line)
-    print(f"  {e['verdict']:<10} head {e['head'][:10]}  ai-assisted commits {e['ai_assisted_commits']}  {', '.join(e['reasons']) or '-'}")
+    print(f"  {e['verdict']:<10} {head} {e['head'][:10]}  {ai} {e['ai_assisted_commits']}  {', '.join(e['reasons']) or '-'}")
 PY
