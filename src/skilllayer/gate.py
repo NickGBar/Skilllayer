@@ -216,6 +216,30 @@ def check_protected_paths(paths: list[str], rules: tuple[str, ...], *, approved:
     return {"name": "protected_paths", "status": FAILED, "hits": hits, "rules": list(rules)}
 
 
+def check_agent_scope(
+    paths: list[str], scopes: tuple[tuple[str, tuple[str, ...]], ...], author: str | None, *, approved: bool,
+) -> dict[str, Any] | None:
+    """When the change's author is an agent account named in the base policy, every changed path
+    must fall inside that account's scope. None when the policy names no agent accounts.
+
+    ``author`` is the change's author as the platform reports it, supplied by the caller (the PR
+    author — not whoever triggered or re-ran the pipeline). Commit metadata is never used: any
+    commit can claim any author."""
+    if not scopes:
+        return None
+    by_account = dict(scopes)
+    if not author:
+        return {"name": "agent_scope", "status": NOT_VERIFIED, "reason": "author_unknown", "agents": sorted(by_account)}
+    rules = by_account.get(author)
+    if rules is None:
+        return {"name": "agent_scope", "status": PASSED, "author": _safe_line(author, 100), "author_is_agent": False}
+    outside = sorted(p for p in paths if not any(_matches_rule(p, rule) for rule in rules))
+    result = {"name": "agent_scope", "author": _safe_line(author, 100), "author_is_agent": True, "rules": list(rules), "outside": outside[:50]}
+    if outside and approved:
+        return {**result, "status": PASSED, "approved_by_caller": True}
+    return {**result, "status": FAILED if outside else PASSED}
+
+
 def check_added_secrets(root: Path, base: str, head: str) -> dict[str, Any]:
     """Scan every line each commit in ``base..head`` adds — commit by commit, not the net diff:
     a key added in one commit and deleted in the next still reaches the remote in history.
@@ -396,6 +420,8 @@ def run_gate(
     approve_test_changes: bool = False,
     flaky_reruns: int = 2,
     accept_flaky: bool = False,
+    author: str | None = None,
+    approve_scope: bool = False,
     receipt_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Judge the change set ``merge-base(base, head)..head``. Writes nothing; raises ValueError
@@ -463,6 +489,9 @@ def run_gate(
         check_added_secrets(root, fork_point, head_sha),
         check_test_integrity(root, fork_point, head_sha, deleted_paths=deleted, approved=approve_test_changes),
     ]
+    scope = check_agent_scope(paths, config.agent_scopes, author, approved=approve_scope)
+    if scope is not None:
+        results.insert(0, scope)
     problems = tree_problems(root, head_sha, receipt_dir=receipt_dir)
     if problems:
         # Running tests here would test a different tree than the one that lands.
@@ -609,6 +638,16 @@ def _check_line(result: dict[str, Any]) -> str:
         return f"  ✗ secrets: {len(found)} added — {shown}"
     if name == "test_integrity":
         return _integrity_lines(result, mark, _INTEGRITY_EN, "test integrity")
+    if name == "agent_scope":
+        if status == NOT_VERIFIED:
+            return f"  ? agent scope: not checked — the change's author is unknown (pass --author); agent accounts: {', '.join(result['agents'])}"
+        if not result.get("author_is_agent"):
+            return f"  ✓ agent scope: author {result['author']} is not an agent account"
+        if result.get("approved_by_caller"):
+            return f"  ✓ agent scope: {result['author']} changed paths outside its scope, with caller approval — {', '.join(result['outside'][:5])}"
+        if result["outside"]:
+            return f"  ✗ agent scope: {result['author']} may change only {', '.join(result['rules'])} — outside: {', '.join(result['outside'][:5])}"
+        return f"  ✓ agent scope: {result['author']} stayed inside {', '.join(result['rules'])}"
     if status == NOT_VERIFIED:
         return f"  ? {name}: not verified ({result.get('reason')})"
     return f"  {mark} {name}: exit {result.get('exit_code')} ({(result.get('duration_ms') or 0) / 1000:.1f}s) — {result.get('command')}"
@@ -822,6 +861,16 @@ def _check_line_ru(result: dict[str, Any]) -> str:
         return f"  ✗ секреты: найдено {len(found)} — {shown}"
     if name == "test_integrity":
         return _integrity_lines(result, mark, _INTEGRITY_RU, "целостность тестов", reason=_reason_ru(result.get("reason")))
+    if name == "agent_scope":
+        if status == NOT_VERIFIED:
+            return f"  ? рамки агента: не проверены — автор изменения неизвестен (передайте --author); учётные записи агентов: {', '.join(result['agents'])}"
+        if not result.get("author_is_agent"):
+            return f"  ✓ рамки агента: автор {result['author']} — не учётная запись агента"
+        if result.get("approved_by_caller"):
+            return f"  ✓ рамки агента: {result['author']} вышел за рамки с разрешения — {', '.join(result['outside'][:5])}"
+        if result["outside"]:
+            return f"  ✗ рамки агента: {result['author']} может менять только {', '.join(result['rules'])} — вне рамок: {', '.join(result['outside'][:5])}"
+        return f"  ✓ рамки агента: {result['author']} остался в рамках {', '.join(result['rules'])}"
     label = "проверка " + name.removeprefix("check:")
     if status == NOT_VERIFIED:
         return f"  ? {label}: не выполнена ({_reason_ru(result.get('reason'))})"

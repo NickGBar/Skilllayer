@@ -77,6 +77,7 @@ class VerifyConfig:
     max_consecutive_blocks: int = 2
     block_on_unverified: bool = False
     test_timeout_seconds: int = 300
+    agent_scopes: tuple[tuple[str, tuple[str, ...]], ...] = ()  # (account, path rules), for skilllayer gate
 
     def effective_protected(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys((*POLICY_FILES, *self.protected_paths)))

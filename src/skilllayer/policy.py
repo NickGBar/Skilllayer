@@ -12,6 +12,9 @@ ALLOWED_APPROVALS = {"dependency_install", "destructive_command"}
 # Keys whose value is a list / a nested mapping of scalars (the parser is deliberately tiny).
 _LIST_KEYS = frozenset({"required_checks", "approval_required_for", "protected_paths"})
 _MAP_KEYS = frozenset({"safe_change", "release", "verify"})
+# Keys whose value maps a name to a list (account -> path rules).
+_MAP_OF_LISTS_KEYS = frozenset({"agent_scopes"})
+_ACCOUNT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-\[\]]{0,99}")
 VERIFY_MODES = {"block", "warn"}
 VERIFY_KEYS = {"mode", "max_consecutive_blocks", "block_on_unverified", "test_timeout_seconds"}
 DEFAULT_POLICY = {
@@ -25,6 +28,9 @@ DEFAULT_POLICY = {
     # policy: this file is inside the repository being judged and must not execute anything.
     "protected_paths": [],
     "verify": {"mode": "block", "max_consecutive_blocks": 2, "block_on_unverified": False, "test_timeout_seconds": 300},
+    # skilllayer gate: an agent's account may change only these paths (repo-relative files or
+    # directory prefixes). Keyed by the account the platform reports as the change's author.
+    "agent_scopes": {},
 }
 
 
@@ -69,6 +75,7 @@ def _parse_policy_text(text: str) -> dict[str, Any]:
         raise ValueError("policy is empty")
     result: dict[str, Any] = {}
     current: str | None = None
+    account: str | None = None
     seen: set[str] = set()
     for indent, content, number in lines:
         if indent == 0:
@@ -78,9 +85,9 @@ def _parse_policy_text(text: str) -> dict[str, Any]:
             if key in seen:
                 raise ValueError(f"duplicate key: {key}")
             seen.add(key)
-            if key in (_LIST_KEYS | _MAP_KEYS) and not raw:
+            if key in (_LIST_KEYS | _MAP_KEYS | _MAP_OF_LISTS_KEYS) and not raw:
                 result[key] = [] if key in _LIST_KEYS else {}
-                current = key
+                current, account = key, None
             else:
                 result[key] = _parse_scalar(raw)
                 current = None
@@ -88,6 +95,19 @@ def _parse_policy_text(text: str) -> dict[str, Any]:
             if not content.startswith("- "):
                 raise ValueError(f"line {number}: expected list item")
             result[current].append(_parse_scalar(content[2:]))
+        elif indent == 2 and current in _MAP_OF_LISTS_KEYS:
+            name, sep, raw = content.partition(":")
+            name = name.strip()
+            if not sep or raw.strip() or content.startswith("-") or not _ACCOUNT_RE.fullmatch(name):
+                raise ValueError(f"line {number}: expected an account name followed by ':'")
+            if name in result[current]:
+                raise ValueError(f"duplicate key: {current}.{name}")
+            result[current][name] = []
+            account = name
+        elif indent == 4 and current in _MAP_OF_LISTS_KEYS and account is not None:
+            if not content.startswith("- "):
+                raise ValueError(f"line {number}: expected list item")
+            result[current][account].append(_parse_scalar(content[2:]))
         elif indent == 2 and current in _MAP_KEYS:
             if ":" not in content or content.startswith("-"):
                 raise ValueError(f"line {number}: expected nested key")
@@ -102,7 +122,7 @@ def _parse_policy_text(text: str) -> dict[str, Any]:
 
 def _validate(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     errors: list[dict[str, Any]] = []
-    allowed = {"version", "required_checks", "approval_required_for", "safe_change", "release", "protected_paths", "verify"}
+    allowed = {"version", "required_checks", "approval_required_for", "safe_change", "release", "protected_paths", "verify", "agent_scopes"}
     unknown = sorted(set(raw) - allowed)
     errors.extend(_error("unknown_field", f"unsupported policy field: {key}") for key in unknown)
     if raw.get("version") != 1:
@@ -135,6 +155,12 @@ def _validate(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str
         errors.append(_error("invalid_type", "verify must be a mapping"))
         verify = {}
     errors.extend(_validate_verify(verify))
+    scopes = raw.get("agent_scopes", {})
+    if not isinstance(scopes, dict) or any(
+        not isinstance(rules, list) or not rules or any(not _is_repo_path_rule(rule) for rule in rules) for rules in scopes.values()
+    ):
+        errors.append(_error("invalid_agent_scope", "agent_scopes maps each agent account to a non-empty list of repository-relative files or directory prefixes"))
+        scopes = {}
     if errors:
         return None, errors
     normalized = {
@@ -145,6 +171,7 @@ def _validate(raw: dict[str, Any]) -> tuple[dict[str, Any] | None, list[dict[str
         "release": {**DEFAULT_POLICY["release"], **release},
         "protected_paths": list(protected),
         "verify": {**DEFAULT_POLICY["verify"], **verify},
+        "agent_scopes": {name: list(rules) for name, rules in scopes.items()},
     }
     return normalized, []
 

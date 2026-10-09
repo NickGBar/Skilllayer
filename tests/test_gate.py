@@ -439,3 +439,71 @@ def test_a_real_failure_survives_the_reruns_and_reruns_can_be_turned_off(tmp_pat
     tests = _check(_gate(repo), "tests")
     assert tests["status"] == g.FAILED and len(tests["reruns"]) == 2 and "flaky_tests" not in tests
     assert "reruns" not in _check(_gate(repo, flaky_reruns=0), "tests")
+
+
+_SCOPED_POLICY = "version: 1\nprotected_paths:\n  - migrations/\nagent_scopes:\n  claude-bot:\n    - src/\n    - tests/\n"
+
+
+def _scoped_repo(tmp_path: Path) -> Path:
+    repo = _repo(tmp_path)
+    _git(repo, "switch", "-q", "main")
+    _commit(repo, "scope the agent", {".skilllayer-policy.yml": _SCOPED_POLICY})
+    _git(repo, "switch", "-q", "feature")
+    _git(repo, "reset", "-q", "--hard", "main")
+    return repo
+
+
+def test_an_agent_account_inside_its_scope_is_accepted(tmp_path):
+    repo = _scoped_repo(tmp_path)
+    _commit(repo, "fix", {"src/auth.py": _SRC + "# x\n"})
+    receipt = _gate(repo, author="claude-bot")
+    scope = _check(receipt, "agent_scope")
+    assert scope["status"] == g.PASSED and scope["author_is_agent"] is True
+    assert receipt["verdict"] == g.GATE_VERIFIED
+
+
+def test_an_agent_account_outside_its_scope_is_blocked_unless_approved(tmp_path):
+    repo = _scoped_repo(tmp_path)
+    _commit(repo, "also docs", {"src/auth.py": _SRC + "# x\n", "docs/notes.md": "hi\n"})
+    receipt = _gate(repo, author="claude-bot")
+    assert _check(receipt, "agent_scope")["outside"] == ["docs/notes.md"]
+    assert receipt["verdict"] == g.GATE_BLOCKED
+    assert "вне рамок: docs/notes.md" in g.render_gate_report(receipt, lang="ru")
+    approved = _gate(repo, author="claude-bot", approve_scope=True)
+    assert _check(approved, "agent_scope")["approved_by_caller"] is True
+    assert approved["verdict"] == g.GATE_VERIFIED
+
+
+def test_a_person_is_not_limited_by_agent_scopes(tmp_path):
+    repo = _scoped_repo(tmp_path)
+    _commit(repo, "docs", {"docs/notes.md": "hi\n"})
+    receipt = _gate(repo, author="ivan")
+    assert _check(receipt, "agent_scope")["author_is_agent"] is False
+    assert receipt["verdict"] == g.GATE_VERIFIED
+
+
+def test_with_agent_scopes_configured_an_unknown_author_is_unverified(tmp_path):
+    repo = _scoped_repo(tmp_path)
+    _commit(repo, "fix", {"src/auth.py": _SRC + "# x\n"})
+    receipt = _gate(repo)
+    assert _check(receipt, "agent_scope")["reason"] == "author_unknown"
+    assert receipt["verdict"] == g.GATE_UNVERIFIED
+
+
+def test_an_agent_cannot_widen_its_own_scope(tmp_path):
+    """The scope comes from the base commit, and the policy file is itself protected."""
+    repo = _scoped_repo(tmp_path)
+    _commit(repo, "widen", {
+        ".skilllayer-policy.yml": _SCOPED_POLICY.replace("    - tests/\n", "    - tests/\n    - docs/\n"),
+        "docs/notes.md": "hi\n",
+    })
+    receipt = _gate(repo, author="claude-bot")
+    assert "docs/notes.md" in _check(receipt, "agent_scope")["outside"]
+    assert ".skilllayer-policy.yml" in _check(receipt, "protected_paths")["hits"]
+    assert receipt["verdict"] == g.GATE_BLOCKED
+
+
+def test_without_agent_scopes_there_is_no_scope_check(tmp_path):
+    repo = _repo(tmp_path)
+    _commit(repo, "fix", {"src/auth.py": _SRC + "# x\n"})
+    assert all(c["name"] != "agent_scope" for c in _gate(repo, author="claude-bot")["checks"])

@@ -16,6 +16,10 @@
   threshold, tests deselected in configuration, a deleted test file. `--approve-test-changes` for a
   person's approval, recorded in the receipt. The walk-through gains a scene where the agent removes
   the failing assertion.
+- Policy key `agent_scopes` and gate check `agent_scope`: each agent account may change only the paths
+  the base policy gives it. `--author` takes the pull/merge request's author as the platform reports it
+  (not commit metadata, not whoever re-ran the pipeline); `--approve-scope` records a person's approval.
+  An agent cannot widen its own scope: the scope is read from the base and the policy file is protected.
 - `test_integrity` false positives cut after measuring it on 1,800 merged changes of six projects
   (`scripts/measure_test_integrity.py`): a skip on a test the change adds, a removed-and-re-added skip and a
   test file moved elsewhere no longer count. Flag rate 3.4% of changes, 0.7% false positives; see docs/GATE.md.

@@ -19,6 +19,7 @@ The change set is `merge-base(base, head)..head`; `head` must be the checked-out
 | `protected_paths` | a path protected by the policy **at the base commit** changed | — |
 | `secrets` | a commit in the range adds a critical or high-severity secret pattern outside test fixtures — even if a later commit deletes it, since history reaches the remote | the history is unavailable or too large to scan |
 | `test_integrity` | the change set weakens the suite: fewer test functions or assertions overall, a `skip`/`xfail` added, an assertion that cannot fail (`assert True`), a lowered coverage threshold, tests deselected in the runner or CI configuration, a test file deleted — unless the caller passes `--approve-test-changes` | the diff is unavailable or too large |
+| `agent_scope` | the change's author is an agent account in the base policy's `agent_scopes`, and a changed path is outside that account's scope — unless `--approve-scope` | `agent_scopes` is set but the caller did not pass `--author` |
 | `check:<name>` | a required command (`--check name=command`) exits non-zero | the command is missing, cannot run, or times out |
 
 Notes that do not block: test files changed, agent configuration changed, key-shaped strings in
@@ -93,6 +94,35 @@ point; 14 merged a release branch; 13 restructured tests with fewer assertions (
 `parametrize`, testing through a public API) — the real false positives, 0.7% of all changes; and
 1 genuinely disabled a failing test (`describe.skip` in express). New tests that arrive with a
 conditional `skipif`, moved test files and reformatted skips are not flagged.
+
+## Agent accounts
+
+Give each agent its own account, and say in the policy what that account may change:
+
+```yaml
+agent_scopes:
+  claude-bot:
+    - src/
+    - tests/
+```
+
+The person writes this once, not per task, and it is read from the base commit like the rest of
+the policy. Pass the change's author with `--author`. It must be the **pull or merge request's
+author**, which the platform verifies — not commit metadata, which any commit can fake, and not
+whoever triggered the pipeline, which changes when someone re-runs a job:
+
+- GitHub: `--author "${{ github.event.pull_request.user.login }}"` — not `github.actor`.
+- GitLab has no predefined variable for the merge request author (`GITLAB_USER_LOGIN` is whoever
+  started the pipeline, `CI_COMMIT_AUTHOR` comes from the commit). Read it from the merge requests
+  API with `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID` and a read-only token; see
+  `examples/gate/gitlab-ci.yml`.
+
+**Required:** protect the policy file on the base branch with CODEOWNERS or branch rules. The gate
+stops a change set from widening its own scope (the scope comes from the base, and the policy
+file is always protected), but a merged change to the policy becomes the next base.
+
+Limits: an account's scope is coarser than a task — inside `src/` the agent may change any file.
+An agent working under a person's account is not covered; that is a process rule, not code.
 
 ## Receipts
 
