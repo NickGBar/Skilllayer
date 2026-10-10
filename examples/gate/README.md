@@ -5,6 +5,6 @@
   person runs to approve a change to a protected path.
 - `github-actions.yml` — the same for pull requests.
 - `run_demo.sh` — four canned agent change sets through the gate, then a tampered receipt
-  (`DEMO_LANG=ru` for Russian).
+  (`DEMO_LANG=ru` for Russian; `DEMO_PAUSE=enter` waits for Enter at each step, for showing it live).
 
 See [docs/GATE.md](../../docs/GATE.md).

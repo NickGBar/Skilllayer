@@ -4,6 +4,7 @@
 # are executed, every commit is scanned, receipts are sealed with a demo key and then checked.
 #
 #   examples/gate/run_demo.sh            # DEMO_PAUSE=1 slows it down for a recording
+#   DEMO_PAUSE=enter examples/gate/run_demo.sh   # waits for Enter at each step, for a live showing
 #   DEMO_LANG=ru examples/gate/run_demo.sh   # narration and gate output in Russian
 #
 # Needs the `skilllayer` command (or SKILLLAYER_BIN=...) and a Python with pytest
@@ -98,7 +99,14 @@ else
 fi
 
 if [ -t 1 ]; then B=$'\033[1m'; D=$'\033[2m'; R=$'\033[0m'; else B=""; D=""; R=""; fi
-pause() { [ "${DEMO_PAUSE:-0}" != "0" ] && sleep "${DEMO_PAUSE}"; return 0; }
+pause() {
+  case "${DEMO_PAUSE:-0}" in
+    0) ;;
+    enter) read -rs _ </dev/tty || true ;;
+    *) sleep "$DEMO_PAUSE" ;;
+  esac
+  return 0
+}
 act() { printf '\n%s== %s ==%s\n' "$B" "$1" "$R"; pause; }
 agent() { printf '%s%s%s %s\n' "$D" "$AGENT" "$R" "$1"; pause; }
 new_branch() { git -C "$REPO" switch -q main; git -C "$REPO" switch -q -c "$1"; }
@@ -175,6 +183,7 @@ ls -1 "$RECEIPTS" | sed 's/^/  /'
 first="$(ls "$RECEIPTS"/*-VERIFIED.json | head -1)"
 printf '%s$ skilllayer gate --verify-receipt %s%s\n' "$D" "$(basename "$first")" "$R"
 "$SKL" gate --verify-receipt "$first" --lang "$DEMO_LANG"
+pause
 "$PY" - "$first" <<'PY'
 import json, sys
 path = sys.argv[1]
@@ -187,6 +196,7 @@ json.dump(receipt, open(path, "w"))
 PY
 printf '%s%s%s\n' "$D" "$TAMPER" "$R"
 "$SKL" gate --verify-receipt "$first" --lang "$DEMO_LANG"
+pause
 printf '\n  %s (%s):\n' "$SIEM" "events.jsonl"
 "$PY" - "$RECEIPTS/events.jsonl" "$DEMO_LANG" <<'PY'
 import json, sys
