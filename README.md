@@ -9,7 +9,7 @@ audit can re-check later.
 > выводится на русском с `--lang ru`.
 
 **Status: prototype.** Nobody runs it in production yet; we are looking for the first pilot
-teams.
+teams: nicolya.baranov@gmail.com.
 
 ## The problem
 
