@@ -4,10 +4,32 @@ Licensor:             Nicolas Baranov
 Licensed Work:        SkillLayer
                       The Licensed Work is (c) 2026 Nicolas Baranov
 
-Additional Use Grant: You may use the Licensed Work for non-commercial
-                      purposes and for evaluation purposes only.
+Additional Use Grant: You may make production use of the Licensed Work,
+                      provided that you do not offer it to third parties as a
+                      hosted, managed or embedded product or service, and that
+                      at least one of the following is true:
 
-                      For commercial use, contact: nicolya.baranov@gmail.com
+                      (a) your use is non-commercial;
+
+                      (b) your use is an evaluation by an Organization,
+                          including a pilot on production repositories, and
+                          lasts no more than 90 days in total for that
+                          Organization; or
+
+                      (c) no more than 10 Developers in your Organization use
+                          the Licensed Work, or have their changes checked by
+                          it, in any period of 90 consecutive days.
+
+                      "Organization" means a legal entity together with every
+                      entity that controls it, is controlled by it, or is
+                      under common control with it. "Developer" means an
+                      individual person. AI agents and bot accounts acting on
+                      a person's behalf count as that person; agents and bot
+                      accounts acting for no specific person count together
+                      as one Developer.
+
+                      Any other production use requires a commercial license.
+                      Contact: nicolya.baranov@gmail.com
 
 Change Date:          2031-01-01
 

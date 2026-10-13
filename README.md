@@ -107,5 +107,14 @@ Details, trust boundaries and the measurement: [docs/GATE.md](docs/GATE.md).
 
 ## License
 
-[Business Source License 1.1](LICENSE): free for non-commercial use; it becomes Apache 2.0 on
-2031-01-01. Use inside a company, including a pilot, needs a separate agreement — ask us.
+[Business Source License 1.1](LICENSE) with an additional use grant. Free, including in
+production:
+
+- non-commercial use;
+- an evaluation or pilot inside a company, up to 90 days in total;
+- a company where no more than 10 developers use it or have their changes checked by it (AI agents
+  acting for a person count as that person).
+
+Not allowed without a commercial license: larger production use, or offering SkillLayer to others
+as a hosted, managed or embedded service. Each version becomes Apache 2.0 four years after its
+release, and on 2031-01-01 at the latest. Exact terms: [LICENSE](LICENSE).
