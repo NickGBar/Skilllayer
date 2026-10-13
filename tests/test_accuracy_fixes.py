@@ -91,6 +91,7 @@ class TestReadmeGartnerClaim:
         softened = "industry analysts have predicted" in text.lower()
         sourced = "gartner.com" in text.lower()
         no_claim = "does not claim to prove" in text.lower() and "token savings" in text.lower()
-        assert softened or sourced or no_claim, (
+        no_mention = "gartner" not in text.lower() and "token" not in text.lower()
+        assert softened or sourced or no_claim or no_mention, (
             f"{rel} must attribute a cost claim, cite it, or make no such claim"
         )

@@ -117,7 +117,7 @@ Say what was recovered correctly, what was missing, and what was irrelevant.
 
 ### 7. Disable or remove — 2 minutes
 
-Follow the [README disable/remove instructions](../README.md#disable-or-remove).
+Follow the [disable/remove instructions](AGENT_TOOLS.md#disable-or-remove).
 Confirm that the MCP entry is removed, the requested installation files are
 removed, project `.skilllayer/` data remains unless you explicitly chose to
 delete it, and unrelated client configuration is unchanged.

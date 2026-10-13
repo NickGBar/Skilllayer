@@ -86,8 +86,9 @@ Run `python -m skilllayer.mcp_server --list-tools` for the full, current list.
 ## License
 
 Business Source License 1.1 (BSL 1.1)
-Free for non-commercial use. Commercial use requires a license.
-Converts to Apache 2.0 on 2031-01-01.
+Free for non-commercial use, for a pilot of up to 90 days, and for companies
+where no more than 10 developers use it. Larger commercial use requires a license.
+Converts to Apache 2.0 on 2031-01-01 at the latest. Exact terms: LICENSE.
 
 ## Status
 
