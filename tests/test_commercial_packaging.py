@@ -32,9 +32,11 @@ def test_install_with_ai_is_confirmation_gated_and_does_not_touch_user_repos():
 
 
 def test_commercial_materials_make_consistent_truthful_claims():
-    combined = "\n".join(_read(rel) for rel in ("README.md", "INSTALL_WITH_AI.md", "ONE_PROMPT_TEST.md", "EARLY_ACCESS.md", "docs/index.html"))
-    for phrase in ("Safe Code Change", "Release Readiness", "Resume Project Work", "Free early access", "macOS", "automatic dependency installation"):
-        assert phrase in combined
+    # The agent tools' early-access materials (the old README now lives in docs/AGENT_TOOLS.md).
+    agent_tools = "\n".join(_read(rel) for rel in ("docs/AGENT_TOOLS.md", "INSTALL_WITH_AI.md", "ONE_PROMPT_TEST.md", "EARLY_ACCESS.md"))
+    for phrase in ("Safe Code Change", "Release Readiness", "Resume Project Work", "Free early access", "macOS", "never installs dependencies"):
+        assert phrase in agent_tools
+    combined = agent_tools + "\n" + _read("README.md") + "\n" + _read("docs/index.html")
     for forbidden in ("$49", "paid beta", "production ready", "guaranteed safe", "proven token savings"):
         assert forbidden not in combined.lower()
 
@@ -47,12 +49,20 @@ def test_results_template_has_required_privacy_and_commercial_fields():
     assert "credentials" in text
 
 
-def test_landing_page_has_required_ctas_and_no_fake_social_proof():
+def test_landing_page_states_the_gate_honestly_and_has_no_fake_social_proof():
     text = _read("docs/index.html")
-    for phrase in ("Professional engineering skills for AI coding agents.", "Install with one prompt", "Try the safe sandbox", "View on GitHub", "Free early access", "No automatic dependency installation", "No hidden repository writes"):
+    for phrase in (
+        "Код от ИИ-агента попадает в ветку, только если проверки действительно прошли.",
+        "Обсудить пилот",
+        "https://github.com/NickGBar/Skilllayer",
+        "прототип",
+        "Сертификата ФСТЭК и записи в реестре российского ПО пока нет",
+        "Клиентов пока тоже нет",
+        "Не ищем уязвимости",
+    ):
         assert phrase in text
-    assert "https://github.com/NickGBar/Skilllayer/blob/main/INSTALL_WITH_AI.md" in text
-    for forbidden in ("testimonial", "customers", "users served", "limited slots"):
+    assert "PLACEHOLDER" not in text
+    for forbidden in ("testimonial", "customers", "users served", "limited slots", "отзывы", "сертифицирован", "гарантир"):
         assert forbidden not in text.lower()
 
 

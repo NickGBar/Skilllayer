@@ -1,252 +1,111 @@
 # SkillLayer
 
-SkillLayer gives AI coding agents professional engineering skills: safe code
-changes, release readiness checks, and persistent project context.
+**Required checks for code written by AI agents.** A change from Claude Code, Cursor, GigaCode or
+any other agent — or a person — lands only when its tests and required checks were observed
+passing on the exact commits that would land. Every run leaves a signed receipt that security and
+audit can re-check later.
 
-- **Make code changes safely.** Inspect the repository and git status, get a
-  bounded change plan, then — after the AI agent makes the edit — validate
-  the resulting diff and tests before you trust it.
-- **Check whether a project is ready to release.** One honest, bounded
-  verdict from git status, a secret scan, dependency and packaging checks,
-  and memory integrity — blockers and incomplete checks are always disclosed,
-  never hidden behind a false "clean."
-- **Continue work across AI-agent sessions.** Save context once; a brand-new
-  session — no prior conversation, no shared memory — recovers what was
-  completed, what constraints matter, and what to do next.
-- **Check the agent's work instead of trusting it.** A Claude Code Stop hook
-  runs your tests itself and reads the real git state when the agent tries to
-  finish; failing tests or a touched protected path send the agent back to
-  work. See [Verify](#verify-check-the-agents-work).
+> **По-русски:** [описание на сайте](https://nickgbar.github.io/Skilllayer/). Отчёт проверки
+> выводится на русском с `--lang ru`.
 
-SkillLayer runs locally and makes no LLM calls of its own. It has no cloud
-service and no uploaded telemetry. It returns
-deterministic, structured JSON, but a deterministic result is not
-automatically safe or portable to every project. SkillLayer does not claim to prove token savings.
+**Status: prototype.** Nobody runs it in production yet; we are looking for the first pilot
+teams.
 
-Python 3.10+ is required. The release path is verified on macOS in this
-repository; Windows installer logic is checked statically, not executed here.
-MCP integration is verified end-to-end with Claude Code and Codex; Cursor is
-partially validated. Not every AI client is supported.
+## The problem
 
-## Install with your AI coding agent
+Agents now write more code than people can review line by line. And an agent:
 
-Use the [one-prompt installation guide](INSTALL_WITH_AI.md) with Claude Code,
-Codex, Cursor, or another terminal-capable coding agent. It asks for approval
-before creating SkillLayer's isolated environment or changing MCP configuration,
-then verifies doctor and a real MCP handshake. It does not touch an existing
-repository unless you explicitly choose one.
+- says "done, all tests pass" when they do not;
+- makes failing tests pass by deleting the assertion, skipping the test or lowering the coverage
+  bar — CI then runs what is left and reports green;
+- changes what it should not, and loosens the rule that protected it in the same commit;
+- commits a key and deletes it in the next commit — the change looks clean, the key is in history.
 
-SkillLayer is available as **free early access**: no payment or account is
-required. macOS is currently verified.
+Afterwards, nobody can show which checks ran on which commit.
 
-- **Safe Code Change** — inspect, plan, and validate a bounded code change.
-- **Release Readiness** — distinguish blockers, warnings, and incomplete checks.
-- **Resume Project Work** — recover saved context in a new agent session.
+## What `skilllayer gate` does
 
-After installation, optionally try the disposable [SkillLayer tester sandbox](https://github.com/NickGBar/skilllayer-tester-sandbox) with its separate [one-prompt test](ONE_PROMPT_TEST.md). It is the recommended place to learn the workflows before using a committed copy of a real repository. See [disable or remove](#disable-or-remove) when you are done.
+It runs in CI (or a git pre-push hook) on `merge-base(base, head)..head`, needs nothing from the
+agent, and decides:
 
-## Verify: check the agent's work
+| Check | Blocks the change when |
+| --- | --- |
+| Tests | they fail when the gate runs them itself; a failure that passes on re-run is flagged as flaky, not passed |
+| Test integrity | the change set weakens the suite: fewer tests or assertions, an added `skip`/`xfail`, `assert True`, a lowered threshold, tests deselected in config |
+| Protected paths | a path protected by the policy **of the base commit** changed — so a change cannot unprotect itself |
+| Secrets | any commit in the range adds a key, even if a later commit deletes it |
+| Agent scope | an agent account changed paths outside the scope the policy gives it |
+| Your checks | a required command you pass (`--check sast="semgrep scan --error"`) exits non-zero |
 
-`skilllayer verify` runs your tests itself and reads live git state, then
-decides whether agent work can be accepted as complete. As a Claude Code Stop
-hook it runs when the agent tries to finish; if the tests fail or a protected
-path was touched, the agent is sent back to work with what was observed, and
-you are told why.
+A check that did not run is never a pass: no tests found, an environment error or a timeout make
+the verdict `UNVERIFIED`, which blocks too. Exit codes: `0` accepted, `2` blocked, `3` unverified,
+`1` error. Where a person decides — a legitimate test removal, a reviewed change to a protected
+path — a CI job they run passes `--approve-test-changes` / `--approve-protected` /
+`--approve-scope`, and the receipt records it.
 
-```bash
-pipx install git+https://github.com/NickGBar/Skilllayer.git
-claude plugin marketplace add NickGBar/Skilllayer
-claude plugin install skilllayer-verify@skilllayer
-```
+## Try it
 
-To watch it work in a scratch repository without a model:
-`examples/verify-demo/run_demo.sh`.
-
-| Observed by SkillLayer itself | Not verified |
-|---|---|
-| The test result — it runs the tests. | That the tests are meaningful: weakened or deleted tests are reported, not blocked. |
-| Which files changed, from live git state, including commits made during the turn. | Anything the agent says in prose. |
-| Protected paths, from the policy as committed at the start of the turn. | Task scope ("allowed paths"): only the cooperative VTE tools check it. |
-
-A check that did not run is never reported as a pass: no tests found, an
-environment problem or a timeout are `UNVERIFIED_*` verdicts. Everything stays
-on your machine. Checked against Claude Code 2.1.275 on macOS; other versions,
-platforms and agents are not verified. Details, policy and limits:
-[docs/VERIFY.md](docs/VERIFY.md).
-
-## Install
-
-From a checkout:
+Four agent-made change sets and a tampered receipt, in a scratch repository, no model involved:
 
 ```bash
 git clone https://github.com/NickGBar/Skilllayer.git
 cd Skilllayer
-./scripts/install.sh
-./scripts/verify_install.sh
+python3 -m venv .venv && .venv/bin/pip install . pytest
+examples/gate/run_demo.sh            # DEMO_LANG=ru for Russian
 ```
 
-The installer creates `.venv` and installs the MCP runtime extra. It fails if
-that required install fails; it does not silently fall back to a reduced MCP
-installation. Use the generated environment explicitly when activation is not
-convenient:
+## Add it to CI
+
+Copy [`examples/gate/github-actions.yml`](examples/gate/github-actions.yml) or
+[`examples/gate/gitlab-ci.yml`](examples/gate/gitlab-ci.yml). The core of both:
 
 ```bash
-.venv/bin/python -m skilllayer doctor --json
-.venv/bin/python -m skilllayer workflows --json
-.venv/bin/python -m skilllayer inspect --repo /path/to/repo --json
+skilllayer gate --base "$BASE_SHA" --author "$PR_AUTHOR" \
+  --check "sast=semgrep scan --error" \
+  --receipt-dir gate-receipts --event-log gate-receipts/events.jsonl
 ```
 
-## MCP
+Make the job a required check and keep `SKILLLAYER_RECEIPT_KEY` in a masked CI variable.
+`--mode warn` reports without blocking — the way to start a pilot.
 
-Generate a config using the installed interpreter, then validate it before
-adding it to a client:
+## Evidence
 
-```bash
-.venv/bin/skilllayer mcp-config --output skilllayer-mcp.json
-.venv/bin/skilllayer mcp-config-check skilllayer-mcp.json --json
-```
+- **Receipt** per run: base, head, commits, changed paths, every check with its command, exit
+  code and output hash, the verdict. Sealed with a SHA-256 digest and an HMAC; the gate takes the
+  key out of the environment before it runs any project code, so the code under judgement cannot
+  sign for itself. `skilllayer gate --verify-receipt FILE` re-checks one.
+- **Event log** (`--event-log`): one JSON line per run for your SIEM, with the receipt's digest.
+- Receipts never contain a matched secret, credentials from a remote URL or e-mail addresses.
 
-Copy the `mcpServers.skilllayer` block into your Claude Code or Cursor MCP
-configuration. The server uses stdio and does not need a checkout-relative
-working directory. If the venv was moved or deleted, the checker reports a
-clear regeneration command rather than claiming the config is valid.
+## Limits, plainly
 
-Start with `skilllayer_inspect_repo`, `skilllayer_search`, or `skilllayer_run`
-for a read-only task such as “Git status”. Internal workflows and the unsafe
-profile/memory execution workflows are not registered over MCP.
+- **Evidence comes from CI.** The local pre-push hook is a convenience: `git push --no-verify`
+  skips it.
+- **The policy file must be protected** on the base branch (CODEOWNERS or branch rules): a merged
+  change to it becomes the next base.
+- **The key protects receipts from the code under judgement, not from CI administrators.** When
+  that matters, keep the event-log digests where they cannot edit them.
+- **The gate runs the change's code** (tests, checks) with the CI job's permissions. It does not
+  sandbox it.
+- **It does not look for vulnerabilities.** Scanners do; run them as required checks through
+  `--check`, and their result lands in the receipt.
+- **Test integrity** is line-based, for Python and JavaScript/TypeScript. On 1,800 recent changes
+  of six open-source projects, 0.7% were flagged without reason (most flags were real test removals
+  a person should approve). Not yet measured on agent-written code.
+- **Secrets**: common key formats, not a full secret scanner.
+- Tested on macOS and in Linux CI with Python 3.10–3.13; Windows is untested.
+- No network calls, no model: the same change set gets the same verdict.
 
-## Try it
+Details, trust boundaries and the measurement: [docs/GATE.md](docs/GATE.md).
 
-Once connected, ask your AI coding agent things like:
+## Also in this repository
 
-> Help me implement this issue safely. Inspect the repository, propose a
-> plan, and validate the final diff.
+- **`skilllayer verify`** — a Claude Code Stop hook that runs the same kind of checks while the
+  agent is still working and sends it back when they fail. [docs/VERIFY.md](docs/VERIFY.md).
+- **Agent tools** — the MCP tools SkillLayer started with (safe change, release readiness, resume
+  work, Verified Task Execution). [docs/AGENT_TOOLS.md](docs/AGENT_TOOLS.md).
 
-> Check whether this repository is ready for careful external testing. Do
-> not modify files.
+## License
 
-> Restore the project context and tell me what was completed, what
-> constraints matter, and what I should do next.
-
-These map to `skilllayer_safe_change`, `skilllayer_release_readiness`, and
-`skilllayer_resume_work` — each returns a bounded verdict (e.g.
-`CHANGE_VALIDATED`, `NOT_READY`, `READY_WITH_REPOSITORY_DRIFT`) rather than a
-free-form summary, and never claims success when a check was incomplete or
-skipped.
-
-### Verified Task Execution
-
-> Implement this as a verified task.
-
-This calls `skilllayer_vte_start` / `skilllayer_vte_checkpoint` /
-`skilllayer_vte_resume` / `skilllayer_vte_finalize` in the correct order and
-returns a structured, evidence-derived receipt instead of a self-reported
-summary:
-
-```
-Verified Task Execution
-
-✓ Baseline captured
-✓ 1 changed file(s) matched approved scope
-✓ No forbidden paths changed
-? Tests passed as reported by the agent (SkillLayer did not run them)
-
-Verdict: VERIFIED COMPLETE
-```
-
-It never reports `VERIFIED COMPLETE` when tests were not recorded, the
-outcome is unknown, a forbidden path changed, or the baseline went stale
-mid-task — see [docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md](docs/VERIFIED_TASK_EXECUTION_USER_GUIDE.md).
-
-What VTE verifies independently, and what it does not: scope and baseline are
-checked from live git state, so an agent cannot misreport which files it
-changed. The **test result is recorded as the agent reports it** — VTE does not
-run the tests, the receipt labels the result "reported", and a false test claim
-is not detected by VTE itself. `skilllayer verify` (and its Claude Code Stop
-hook) runs the tests itself and is the path that observes them.
-
-`skilllayer_vte_finalize` also returns a deterministic, human-readable
-Markdown report alongside the JSON receipt — for a blocked task too, so you
-never need a second call just to see what went wrong. It is derived only
-from the same evidence as the receipt and can never contradict it — see
-[docs/VTE_HUMAN_REPORT.md](docs/VTE_HUMAN_REPORT.md).
-
-## Writes, memory, and network
-
-Read-only workflows do not intentionally write repository files. Stateful
-memory commands write only under `.skilllayer/` and report written paths; they
-never edit `.gitignore`. Snapshot/watch workflows persist a baseline only when
-their explicit persistence option is enabled. A “watch” is snapshot-and-diff,
-not a background real-time service.
-
-Some workflows execute a project’s tests, make network requests, start browser
-work, or run a target script. Their metadata marks these as
-`external_side_effects_possible`; use committed copies or a clean branch first.
-BrowserSmoke requires its configured browser backend and writes artifacts only
-when explicitly enabled.
-
-For Python tests, SkillLayer uses a usable target-repository `.venv`, `venv`,
-or `env` interpreter before falling back to its own interpreter. Structured
-test results report the selected interpreter and fallback decision. SkillLayer
-never installs dependencies or creates environments; a missing test dependency
-is reported as incomplete validation rather than a claim that the code failed.
-
-### Environment-aware validation
-
-When a target environment cannot collect tests, SkillLayer reports an
-evidence-based command you can review and run yourself. It never executes that
-command automatically; validation remains incomplete until tests actually run.
-
-Automatic telemetry is off by default and no telemetry is uploaded. Session
-usage reads local Claude Code logs and can measure recorded usage; it cannot
-prove token savings or establish a counterfactual baseline.
-
-## Disable or remove
-
-To disable integration, remove only the `skilllayer` entry from your MCP
-client configuration and restart that client. To remove the installation,
-delete the SkillLayer virtual environment or uninstall the package from that
-environment. Project memory under `.skilllayer/` is user data: delete it only
-with an explicit project-level decision. Local telemetry/log directories, if
-you explicitly enabled them, can be removed separately.
-
-`scripts/uninstall.sh` and `scripts/uninstall.ps1` make those choices explicit:
-use `--remove-venv`, `--remove-project-state`, or `--remove-user-data` only for
-the data you intend to remove. They never remove project memory by default.
-
-## Operational help
-
-Use `skilllayer doctor --json` for installation readiness, `skilllayer diagnostics --json` for a local sanitized support report, and `skilllayer update-check --json` for a read-only public release lookup. See [INSTALL_WITH_AI.md](INSTALL_WITH_AI.md), [UPDATE.md](UPDATE.md), [POLICY.md](POLICY.md), [DIAGNOSTICS.md](DIAGNOSTICS.md), [COMPATIBILITY.md](COMPATIBILITY.md), [SUPPORT.md](SUPPORT.md), [KNOWN_ISSUES.md](KNOWN_ISSUES.md), [Claude Code integration](docs/integrations/claude-code.md), [Codex integration](docs/integrations/codex.md), [CHANGELOG.md](CHANGELOG.md), and [disable or remove](#disable-or-remove).
-
-## What this feels like
-
-After installation, Claude Code discovers the local SkillLayer tools through
-MCP. You ask it to inspect a repository or search for `greet`; the result is
-structured JSON rather than model-generated shell steps. Later, if you choose
-to save context, SkillLayer reports the exact `.skilllayer/` paths written, and
-you can rehydrate that context in a later session.
-
-## Advanced: low-level tools
-
-The professional skills above are built from lower-level, independently
-callable building blocks: repository inspection, git history and blame,
-dependency mapping, secret scanning, dead-code detection, todo/decision
-tracking, and more. Current code registers 47 workflows: 41 `stable` and 6
-`internal`. The authoritative inventory is `skilllayer workflows --json`; it
-includes each workflow’s stability and write behavior. MCP currently exposes
-52 tools (42 general-purpose tools, 6 Verified Task Execution tools, and 4
-Skill Opportunity Audit tools); the runtime tool list is authoritative and
-can change with the installed version. Use `skilllayer_list_skills` for the
-full professional skill catalog, including Verified Task Execution.
-
-### Skill Opportunity Audit
-
-SkillLayer never forces its own tools to be used. To learn whether that's
-working without contaminating the experiment, an optional local audit
-(`skilllayer_audit_*`) can record which capabilities a session actually
-used, which were plausibly applicable but skipped, and what ordinary
-actions duplicated SkillLayer functionality by hand — all from bounded,
-normalized-enum observations, never by inspecting arbitrary activity. It
-never invokes a skill, never blocks a tool, and stays in-memory unless you
-explicitly ask it to persist. See
-[docs/SKILL_OPPORTUNITY_AUDIT.md](docs/SKILL_OPPORTUNITY_AUDIT.md).
+[Business Source License 1.1](LICENSE): free for non-commercial use; it becomes Apache 2.0 on
+2031-01-01. Use inside a company, including a pilot, needs a separate agreement — ask us.
