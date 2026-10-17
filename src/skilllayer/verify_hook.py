@@ -42,6 +42,7 @@ from .verify import (
     render_user_summary,
     show_committed_file,
     take_snapshot,
+    tests_collect_prose,
     verify_repo,
 )
 
@@ -222,7 +223,23 @@ def _handle_stop(payload: dict[str, Any], *, test_command: list[str] | None, rec
     if snap.tree_hash in {state.get("last_verified_tree_hash"), baseline.get("tree_hash")}:
         return HookOutcome(0)  # nothing new since the turn began or since the last verification
 
-    report = verify_repo(root, config=config, test_command=test_command, baseline_head=baseline_head, session_id=session)
+    # The tree moved, but perhaps only prose did. A test run already observed on exactly
+    # these code bytes still applies to them, so it is reused rather than repeated —
+    # which is the difference between a tool that costs 39 seconds every turn and one
+    # that costs nothing on the turns where no code was touched.
+    #
+    # Never a way to skip a check: only a PASSED observation is carried forward, only
+    # within the session that made it, only when the code hash matches exactly, and the
+    # receipt records `tests_reused_code_unchanged`.
+    reuse = None
+    previous = state.get("last_verified_tests")
+    if (previous
+            and state.get("last_verified_code_tree_hash") == snap.code_tree_hash
+            and previous.get("outcome") == "PASSED"
+            and not tests_collect_prose(previous.get("command"))):
+        reuse = previous
+
+    report = verify_repo(root, config=config, test_command=test_command, baseline_head=baseline_head, session_id=session, reuse_tests=reuse)
     report["limitations"] = sorted(set(report["limitations"]) | set(notes))
     blocks_so_far = int(state.get("consecutive_blocks") or 0)
     stop_hook_active = bool(payload.get("stop_hook_active"))
@@ -251,6 +268,10 @@ def _handle_stop(payload: dict[str, Any], *, test_command: list[str] | None, rec
         return _block(report, attempt=attempt, max_attempts=config.max_consecutive_blocks)
 
     state.update(consecutive_blocks=0, last_verified_tree_hash=report["tree_hash_after"])
+    if report["verdict"] == "VERIFIED":
+        # Kept without the output tail: state is small and the tail is already in the receipt.
+        state["last_verified_code_tree_hash"] = report.get("code_tree_hash")
+        state["last_verified_tests"] = {k: v for k, v in report["tests"].items() if k != "output_tail"}
     save_state(root, session, state)
     if record:
         record_report(root, report)

@@ -149,6 +149,29 @@ your shell resolves is used instead — an activated virtualenv, then `python3`/
 `PATH` — provided it can import the test framework. The interpreter used is visible in every
 receipt. If none can, the verdict is `UNVERIFIED_ENVIRONMENT` with the reason.
 
+## What it costs per turn
+
+The hook runs on every Stop, so its cost is paid on every turn and not only on the turns
+that catch something. Two things keep it near zero when nothing happened:
+
+- **Nothing changed at all** — the working tree hash matches the turn's baseline or the
+  last verification, and the hook returns immediately without running anything.
+- **Only prose changed** — a test run already observed on byte-identical *code* still
+  applies to that code, so it is carried forward rather than repeated. Measured on a
+  792-test repository, a turn that touched three markdown files went from 38.9 s to 0.07 s.
+
+Carrying an observation forward is not a way to skip a check, and the conditions are
+deliberately narrow: only a `PASSED` run, only inside the session that observed it, and
+only when the hash over the paths that could change a test outcome matches exactly. The
+receipt records `tests_reused_code_unchanged` in its limitations and keeps the original
+run's duration, so a reader can see which observation the verdict rests on.
+
+Which paths count as prose is a **deny** list — `.md`, `.rst`, `.txt`, images and the like.
+Anything else, including a file with no suffix, a dotfile, a config or a fixture, counts as
+code, so a new kind of source file is never treated as inert by accident. When the test
+command collects prose as tests (`--doctest-glob`, `--doctest-modules`) the rule that makes
+this sound no longer holds, and reuse is switched off entirely.
+
 ## Receipts, stats and privacy
 
 Everything is stored **outside** the repository, so verifying never dirties the tree it is

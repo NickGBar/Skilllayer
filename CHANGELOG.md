@@ -45,6 +45,16 @@
 
 ### Fixed
 
+- `verify` as a Stop hook no longer re-runs the whole suite on a turn that changed no code.
+  An observation already made on byte-identical code is carried forward instead — only a
+  PASSED one, only inside the session that made it, and only when the hash over the paths
+  that can affect a test outcome matches exactly. The receipt records it as
+  `tests_reused_code_unchanged` and keeps the original run's duration, so the verdict stays
+  exactly as strong as the observation behind it. Measured on a 792-test repository: a turn
+  that touched three markdown files went from 38.9 s to 0.07 s. Prose suffixes are a deny
+  list (unknown means code), and reuse switches off entirely when the test command collects
+  prose as tests (`--doctest-glob` and friends).
+
 - `skilllayer verify` dropped failing tests with long descriptive names (such as
   `test_save10_never_takes_off_more_than_50_dollars`) from the message the agent receives: the
   persistence gate's entropy heuristic took them for keys. Every failing test is now listed; the

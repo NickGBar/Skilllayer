@@ -372,3 +372,139 @@ def test_policy_can_make_weakened_tests_a_warning(tmp_path):
     outcome = h.handle_stop(_payload(repo))
     assert _reason(outcome) is None
     assert "tests were weakened this turn: skip/xfail added" in json.loads(outcome.stdout)["systemMessage"]
+
+
+# --- reusing an observation when no code changed -----------------------------
+#
+# The hook used to run the whole suite on every stop whose tree moved at all — measured
+# at 38.9 s on a 792-test repository for a turn that touched three markdown files. That
+# cost is what decides whether the tool is worth keeping switched on, so it is tested
+# here rather than left to judgement.
+#
+# The rule is narrow on purpose: an observation is carried forward only when the *code*
+# is byte-identical, only when it passed, and only inside the session that made it. It
+# never turns an unobserved run into a pass.
+
+
+def _verified_turn(repo: Path, session: str = "sess-1") -> None:
+    """One full turn that ends VERIFIED, so there is an observation to carry forward."""
+    h.handle_prompt_submit(_payload(repo, session_id=session))
+    (repo / "src/auth.py").write_text("def login():\n    return 'old'  # touched\n")
+    outcome = h.handle_stop(_payload(repo, session_id=session))
+    assert _reason(outcome) is None, "the setup turn was expected to verify"
+
+
+def test_a_prose_only_turn_reuses_the_observation_instead_of_rerunning(tmp_path, monkeypatch):
+    repo = _repo(tmp_path)
+    _verified_turn(repo)
+
+    h.handle_prompt_submit(_payload(repo))
+    (repo / "NOTES.md").write_text("# notes\n")
+    monkeypatch.setattr(v, "observe_tests", lambda *a, **k: pytest.fail("tests were re-run"))
+
+    outcome = h.handle_stop(_payload(repo))
+
+    assert _reason(outcome) is None
+    receipt = json.loads(sorted((v.data_dir(repo) / "receipts").glob("*.json"))[-1].read_text())
+    assert receipt["verdict"] == "VERIFIED"
+    assert receipt["tests"]["reused"] is True
+    # The receipt says the run was not repeated — the claim stays exactly as strong as
+    # the observation behind it.
+    assert "tests_reused_code_unchanged" in receipt["limitations"]
+
+
+def test_a_code_change_still_runs_the_tests(tmp_path):
+    repo = _repo(tmp_path)
+    _verified_turn(repo)
+
+    h.handle_prompt_submit(_payload(repo))
+    _break(repo)
+    outcome = h.handle_stop(_payload(repo))
+
+    # Reuse must not survive a code change: this is the case the whole product exists for.
+    assert "Tests failing" in (_reason(outcome) or "")
+
+
+def test_prose_beside_code_is_not_a_prose_only_turn(tmp_path):
+    repo = _repo(tmp_path)
+    _verified_turn(repo)
+
+    h.handle_prompt_submit(_payload(repo))
+    (repo / "NOTES.md").write_text("# notes\n")
+    _break(repo)
+    outcome = h.handle_stop(_payload(repo))
+
+    assert "Tests failing" in (_reason(outcome) or "")
+
+
+def test_deleting_a_source_file_is_a_code_change(tmp_path):
+    """Deletions are not in the changed-path list, so they need their own entry in the
+    code hash — otherwise removing a module would read as a prose-only turn."""
+    repo = _repo(tmp_path)
+    before = v.take_snapshot(repo).code_tree_hash
+    (repo / "src/auth.py").unlink()
+
+    assert v.take_snapshot(repo).code_tree_hash != before
+
+
+def test_an_unknown_suffix_counts_as_code(tmp_path):
+    """The list is a deny list: a new kind of source file is never inert by default."""
+    assert v.can_affect_tests("src/thing.py") is True
+    assert v.can_affect_tests("conftest.py") is True
+    assert v.can_affect_tests(".gitignore") is True
+    assert v.can_affect_tests("Makefile") is True
+    assert v.can_affect_tests("data/fixture.json") is True
+    assert v.can_affect_tests("tests/cases.yaml") is True
+    assert v.can_affect_tests("README.md") is False
+    assert v.can_affect_tests("docs/guide.rst") is False
+    assert v.can_affect_tests("logo.png") is False
+
+
+def test_a_doctest_command_switches_reuse_off(tmp_path, monkeypatch):
+    """When the runner collects prose as tests, prose is not inert and the rule that
+    makes reuse sound no longer holds."""
+    assert v.tests_collect_prose(["pytest", "-q", "--doctest-glob=*.md"]) is True
+    assert v.tests_collect_prose(["pytest", "-q", "tests"]) is False
+
+    repo = _repo(tmp_path)
+    command = ["python3", "-m", "pytest", "-q", "--doctest-glob=*.md", "tests"]
+    h.handle_prompt_submit(_payload(repo))
+    (repo / "src/auth.py").write_text("def login():\n    return 'old'  # touched\n")
+    h.handle_stop(_payload(repo), test_command=command)
+
+    h.handle_prompt_submit(_payload(repo))
+    (repo / "NOTES.md").write_text("# notes\n")
+    ran: list[bool] = []
+    real = v.observe_tests
+    monkeypatch.setattr(v, "observe_tests", lambda *a, **k: (ran.append(True), real(*a, **k))[1])
+    h.handle_stop(_payload(repo), test_command=command)
+
+    assert ran, "a doctest-collecting command must re-run on a prose change"
+
+
+def test_an_observation_is_not_carried_into_another_session(tmp_path, monkeypatch):
+    """State is per session. Carrying a result across sessions would mean trusting an
+    observation whose code state nobody re-established."""
+    repo = _repo(tmp_path)
+    _verified_turn(repo, session="sess-1")
+
+    h.handle_prompt_submit(_payload(repo, session_id="sess-2"))
+    (repo / "NOTES.md").write_text("# notes\n")
+    ran: list[bool] = []
+    real = v.observe_tests
+    monkeypatch.setattr(v, "observe_tests", lambda *a, **k: (ran.append(True), real(*a, **k))[1])
+    h.handle_stop(_payload(repo, session_id="sess-2"))
+
+    assert ran, "a fresh session must observe the tests itself"
+
+
+def test_a_failed_observation_is_never_carried_forward(tmp_path):
+    """Only a PASSED run is reusable. Carrying a failure forward would block a prose
+    change for a reason that no longer describes the code."""
+    repo = _repo(tmp_path)
+    h.handle_prompt_submit(_payload(repo))
+    _break(repo)
+    h.handle_stop(_payload(repo))
+
+    state = h.load_state(repo, "sess-1")
+    assert state.get("last_verified_tests") is None

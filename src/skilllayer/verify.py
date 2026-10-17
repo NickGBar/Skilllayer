@@ -150,6 +150,54 @@ def _matches_rule(path: str, rule: str) -> bool:
     return path == rule or path.startswith(rule + "/")
 
 
+# Suffixes that cannot change what a test run observes. Deliberately a *deny* list: a
+# path whose suffix is unknown counts as code, so a new kind of source file is never
+# skipped by accident. Prose and images only — anything that a runner could execute,
+# import, parametrise or read as fixture data is absent on purpose.
+#
+# This is only ever used to decide whether an *already observed* test result still
+# applies to byte-identical code (see Snapshot.code_tree_hash). It never turns an
+# unobserved run into a pass.
+INERT_SUFFIXES: frozenset[str] = frozenset({
+    ".md", ".markdown", ".rst", ".adoc", ".txt",
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".pdf",
+})
+
+# A test command that collects prose as tests makes the list above false, so reuse is
+# switched off entirely when one of these appears in it.
+DOCTEST_MARKERS: tuple[str, ...] = ("--doctest-glob", "--doctest-modules", "--doctest-report", "doctest")
+
+
+def can_affect_tests(path: str) -> bool:
+    """Could a change to this path change what a test run observes?
+
+    Unknown means yes. A file with no suffix, a dotfile, a config, a fixture — all code
+    for this purpose; only the prose and image suffixes above are inert.
+    """
+    name = path.rsplit("/", 1)[-1]
+    if name.startswith(".") and "." not in name[1:]:
+        return True  # a dotfile like `.gitignore` has no suffix to judge
+    suffix = ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
+    return suffix not in INERT_SUFFIXES
+
+
+def tests_collect_prose(test_command: list[str] | str | None) -> bool:
+    """True when the test command can turn an inert file into a test.
+
+    Accepts both shapes it is reached with: the argv list a caller passes, and the single
+    string an observation records. Joining a string as if it were a list would spread it
+    into separate characters and silently match nothing — which is how this was first
+    written, and what its test caught.
+    """
+    if test_command is None:
+        joined = ""
+    elif isinstance(test_command, str):
+        joined = test_command.lower()
+    else:
+        joined = " ".join(test_command).lower()
+    return any(marker in joined for marker in DOCTEST_MARKERS)
+
+
 def _stat_token(path: Path) -> str:
     try:
         st = path.stat()
@@ -168,6 +216,9 @@ class Snapshot:
     deleted_paths: list[str]
     limitations: list[str]
     tree_hash: str
+    # The same hash over only the paths that could change a test outcome. Equal hashes
+    # mean an observed test result still applies, so it can be reused instead of re-run.
+    code_tree_hash: str = ''
 
 
 def take_snapshot(root: Path) -> Snapshot:
@@ -188,10 +239,21 @@ def take_snapshot(root: Path) -> Snapshot:
     fingerprints = fingerprint_relevant_files(root, paths)
     by_path = {item["path"]: item["sha256"] for item in fingerprints["fingerprints"]}
     parts = [head or "no-head"]
+    code_parts = [head or "no-head"]
     for path in sorted(paths):
-        parts.append(f"{path}\0{by_path.get(path) or _stat_token(root / path)}")
+        entry = f"{path}\0{by_path.get(path) or _stat_token(root / path)}"
+        parts.append(entry)
+        if can_affect_tests(path):
+            code_parts.append(entry)
+    # A deletion is not in `paths`, and deleting a source file certainly changes what the
+    # tests observe — so deleted code goes into the code hash as its own entry.
+    for path in sorted(deleted):
+        if can_affect_tests(path):
+            code_parts.append(f"{path}\0deleted")
     tree_hash = hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
-    return Snapshot(head, sorted(paths), sorted(deleted), list(fingerprints["limitations"]), tree_hash)
+    code_tree_hash = hashlib.sha256("\n".join(code_parts).encode("utf-8")).hexdigest()
+    return Snapshot(head, sorted(paths), sorted(deleted), list(fingerprints["limitations"]),
+                    tree_hash, code_tree_hash)
 
 
 def _committed_changes(root: Path, baseline_head: str | None, head: str | None) -> tuple[list[str], list[str], list[str]]:
@@ -448,13 +510,23 @@ def verify_repo(
     test_command: list[str] | None = None,
     baseline_head: str | None = None,
     session_id: str = "cli",
+    reuse_tests: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Observe tests + repository facts and reach a verdict. Writes nothing."""
+    """Observe tests + repository facts and reach a verdict. Writes nothing.
+
+    ``reuse_tests`` carries an observation already made on byte-identical code (see
+    :meth:`Snapshot.code_tree_hash`). It is not a way to skip a check: the run it
+    describes really happened, on exactly these bytes, and the receipt says so. The
+    caller is responsible for proving the code is unchanged — this function trusts it.
+    """
     config = config or VerifyConfig()
     started = time.perf_counter()
     before = take_snapshot(root)
     changes = collect_changes(root, before, baseline_head)
-    tests = observe_tests(root, test_command=test_command, timeout_s=config.test_timeout_seconds)
+    if reuse_tests is not None:
+        tests = {**reuse_tests, "reused": True}
+    else:
+        tests = observe_tests(root, test_command=test_command, timeout_s=config.test_timeout_seconds)
     after = take_snapshot(root)  # test runs can leave artifacts; the hook stores this hash
 
     protected_rules = config.effective_protected()
@@ -511,8 +583,11 @@ def verify_repo(
         "changes": {**changes, "paths": changes["paths"][:_MAX_LISTED_PATHS], "protected_hits": protected_hits},
         "tree_hash_before": before.tree_hash,
         "tree_hash_after": after.tree_hash,
+        "code_tree_hash": after.code_tree_hash,
         "duration_ms": round((time.perf_counter() - started) * 1000.0, 1),
-        "limitations": sorted(set(changes["limitations"]) | set(tests.get("limitations") or [])),
+        "limitations": sorted(
+            set(changes["limitations"]) | set(tests.get("limitations") or [])
+            | ({"tests_reused_code_unchanged"} if reuse_tests is not None else set())),
     }
 
 
