@@ -1,98 +1,371 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="ru">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Контур проверок для кода от ИИ-агентов: изменение попадает в ветку, только если обязательные проверки действительно прошли, и остаётся подписанная квитанция.">
-    <title>SkillLayer — контур проверок для кода от ИИ-агентов</title>
-    <link rel="stylesheet" href="styles.css">
-  </head>
-  <body>
-    <main>
-      <header class="hero">
-        <p class="eyebrow">SkillLayer · прототип</p>
-        <h1>Код от ИИ-агента попадает в ветку, только если проверки действительно прошли.</h1>
-        <p class="lead">Контур проверок в вашем CI. Сам запускает тесты, замечает ослабленные тесты, правки закрытых зон и ключи в любом коммите — и по каждому изменению оставляет подписанную квитанцию для ИБ и аудита.</p>
-        <div class="actions">
-          <a class="button primary" href="#pilot">Обсудить пилот</a>
-          <a class="button secondary" href="https://github.com/NickGBar/Skilllayer">Код на GitHub</a>
-        </div>
-      </header>
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<meta content="Контур проверок для кода от ИИ-агентов: изменение попадает в ветку, только если обязательные проверки действительно прошли, и остаётся подписанная квитанция." name="description"/>
+<meta content="#000000" media="(prefers-color-scheme: dark)" name="theme-color"/>
+<meta content="#ffffff" media="(prefers-color-scheme: light)" name="theme-color"/>
+<meta content="SkillLayer — контур проверок для кода от ИИ-агентов" property="og:title"/>
+<meta content="Код от ИИ попадает в ветку, только если проверки действительно прошли. Работает в вашем CI, без сети и без модели." property="og:description"/>
+<meta content="website" property="og:type"/>
+<title>SkillLayer — контур проверок для кода от ИИ-агентов</title>
+<link href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230071e3'/%3E%3Cpath d='M16 7l9 5-9 5-9-5z' fill='%23fff'/%3E%3Cpath d='M7 16.5l9 5 9-5' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='.7'/%3E%3Cpath d='M7 21l9 5 9-5' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' opacity='.4'/%3E%3C/svg%3E" rel="icon"/>
+<script>document.documentElement.classList.add('js');try{var t=localStorage.getItem('sl-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link href="styles.css" rel="stylesheet"/>
+</head>
+<body>
+<header class="nav" id="nav">
+<div class="wrap">
+<a aria-label="SkillLayer" class="brand" href="#top">
+<svg aria-hidden="true" viewbox="0 0 32 32"><defs><lineargradient id="lg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#2997ff"></stop><stop offset="1" stop-color="#8e5cf7"></stop></lineargradient></defs><rect fill="url(#lg)" height="32" rx="8" width="32"></rect><path d="M16 7l9 5-9 5-9-5z" fill="#fff"></path><path d="M7 16.5l9 5 9-5" fill="none" opacity=".7" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M7 21l9 5 9-5" fill="none" opacity=".4" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          SkillLayer
+        </a>
+<nav aria-label="Разделы" class="nav-links" data-i18n-aria="s172">
+<a data-i18n="s1" href="#cycle">Цикл ревью</a>
+<a data-i18n="s2" href="#problem">Работает сегодня</a>
+<a data-i18n="s3" href="#roadmap">Дальше</a>
+<a data-i18n="s4" href="#install">Установка</a>
+</nav>
+<div class="settings">
+<button aria-controls="settings-pop" aria-expanded="false" aria-haspopup="dialog" aria-label="Настройки" class="gear" data-i18n-aria="g1" id="settings-btn" type="button"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg></button>
+<div aria-label="Настройки" class="pop" data-i18n-aria="g2" hidden id="settings-pop" role="dialog">
+<div class="grp"><p class="pop-lbl" data-i18n="g3">Тема</p>
+<div aria-label="Тема" class="seg" data-i18n-aria="g4" data-setting="theme" role="radiogroup">
+<button aria-checked="false" data-i18n="g5" data-v="auto" role="radio" type="button">Авто</button><button aria-checked="false" data-i18n="g6" data-v="light" role="radio" type="button">Светлая</button><button aria-checked="false" data-i18n="g7" data-v="dark" role="radio" type="button">Тёмная</button>
+</div></div>
+<div class="grp"><p class="pop-lbl" data-i18n="g8">Язык</p>
+<div aria-label="Язык" class="seg" data-i18n-aria="g9" data-setting="lang" role="radiogroup">
+<button aria-checked="false" data-v="ru" role="radio" type="button">Русский</button><button aria-checked="false" data-v="en" role="radio" type="button">English</button>
+</div></div>
+</div>
+</div>
+<a class="button primary nav-cta" data-i18n="s5" href="#pilot">Обсудить пилот</a>
+</div>
+</header>
+<main id="top">
+<!-- ============ HERO ============ -->
+<header class="hero">
+<div aria-hidden="true" class="glow"></div>
+<div class="wrap">
+<p class="badge" data-i18n="s6"><i></i>Прототип · ищем первые пилоты</p>
+<h1 data-i18n="s7">Код от ИИ доходит до ревью <span class="grad">уже проверенным.</span></h1>
+<p class="lead" data-i18n="s8">Автоматические проверки в вашем CI и в сессии агента ловят то, что не должно попадать к ревьюеру, и возвращают агента доделывать. Без модели, без сети, с подписанной квитанцией по каждому изменению.</p>
+<div class="actions">
+<a class="button primary" data-i18n="s9" href="#pilot">Обсудить пилот</a>
+<a class="button secondary" data-i18n="s10" href="https://github.com/NickGBar/Skilllayer">Код на GitHub ›</a>
+</div>
+<p class="works-with"><span class="lbl" data-i18n="s11">Работает с</span><b>GitHub Actions</b><b>GitLab CI</b><b>Claude Code</b><b data-i18n="s12">любой агент — по git</b></p>
+<div aria-label="Вывод skilllayer gate: изменение заблокировано, потому что агент убрал ассерт, хотя тесты зелёные" class="window" data-i18n-aria="s173" role="img">
+<div class="window-bar"><i></i><i></i><i></i><span>zsh — skilllayer gate</span></div>
+<pre aria-hidden="true" class="term"><span class="line" data-i18n="s13" style="--i:0"><span class="dim">агент&gt;</span> Тесты зелёные. (Лишний ассерт убрал.)</span><span class="line" style="--i:1"><span class="dim">$ skilllayer gate --base main</span></span><span class="line" style="--i:2">skilllayer gate — <span class="bad"><b data-i18n="s14">✗ ЗАБЛОКИРОВАНО</b></span><span class="ru-only"> (BLOCKED)</span></span><span class="line" data-i18n="s15" style="--i:3">  изменения: 84b01c1c87..7ae1f7f5a9 — коммитов: 1, с пометкой ИИ: 1, файлов: 2</span><span class="line" data-i18n="s16" style="--i:4">  <span class="ok">✓</span> защищённые пути: не затронуты</span><span class="line" data-i18n="s17" style="--i:5">  <span class="ok">✓</span> секреты: не найдены (проверено добавленных строк: 2)</span><span class="line" data-i18n="s18" style="--i:6">  <span class="bad">✗</span> целостность тестов: признаков ослабления: 1 (тестов +0/−0, ассертов +0/−1)</span><span class="line" data-i18n="s19" style="--i:7">      ассертов стало меньше на 1 — tests/test_promo.py:5</span><span class="line" data-i18n="s20" style="--i:8">  <span class="ok">✓</span> тесты: python -m pytest -q -p no:cacheprovider → 2 passed in 0.00s (код 0, 0,2 с)</span></pre>
+</div>
+</div>
+</header>
+<!-- ============ FACTS ============ -->
+<div class="facts">
+<div class="wrap">
+<div class="facts-grid reveal">
+<div class="fact"><b>0</b><span data-i18n="s21">байт кода уходит наружу. Проверка работает в вашем CI, без сети</span></div>
+<div class="fact"><b>0</b><span data-i18n="s22">ИИ-моделей внутри проверки. Одно изменение — один и тот же вердикт</span></div>
+<div class="fact"><b>3</b><span data-i18n="s23">исхода: принято, заблокировано, проверить не удалось. «Не удалось» зелёным не бывает</span></div>
+</div>
+</div>
+</div>
+<!-- ============ CYCLE ============ -->
+<section id="cycle">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="eyebrow" data-i18n="s24">Цикл ревью</p>
+<h2 data-i18n="s25">Время ревьюера уходит на круги, а не на смысл.</h2>
+<p data-i18n="s26">Агент вернул PR, ревьюер нашёл механическую проблему, агент исправил, ревьюер читает снова. Мы убираем эти круги — до человека.</p>
+</div>
+<div class="lanes">
+<div class="lane reveal">
+<h3 data-i18n="s27">Сейчас <small>каждый круг — внимание ревьюера</small></h3>
+<div class="track">
+<span class="step" data-i18n="s28">Агент</span><span class="join">→</span>
+<span class="step">PR</span><span class="join">→</span>
+<span class="step human" data-i18n="s29">Ревьюер читает</span><span class="join">→</span>
+<span class="step back" data-i18n="s30">«тест убран», «это уже есть», «ключ в истории»</span><span class="join">→</span>
+<span class="step" data-i18n="s31">Агент</span><span class="join">→</span>
+<span class="step human" data-i18n="s32">Ревьюер читает снова</span><span class="join">→</span>
+<span class="step">…</span>
+</div>
+</div>
+<div class="lane after reveal" style="--d:.08s">
+<h3 data-i18n="s33">С SkillLayer <small>механика уходит из ревью</small></h3>
+<div class="track">
+<span class="step" data-i18n="s34">Агент</span><span class="join">→</span>
+<span class="step auto" data-i18n="s35">Проверки в сессии и в CI</span><span class="join">→</span>
+<span class="step back" data-i18n="s36">красное — агента возвращают с фактами</span><span class="join">→</span>
+<span class="step auto" data-i18n="s37">Чисто + квитанция</span><span class="join">→</span>
+<span class="step">PR</span><span class="join">→</span>
+<span class="step human" data-i18n="s38">Ревьюер читает смысл</span><span class="join">→</span>
+<span class="step done">Merge</span>
+</div>
+</div>
+</div>
+<p class="note reveal" data-i18n="s39">Схема цели, а не измерение. Сколько кругов она убирает у вас — покажет пилот: считаем возвраты до и после.</p>
+</div>
+</section>
+<!-- ============ PROBLEM ============ -->
+<section id="problem">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="eyebrow"><span class="chip live" data-i18n="s40">Работает сегодня</span></p>
+<h2 data-i18n="s41">Что делает агент — и чего не видит обычный CI.</h2>
+<p data-i18n="s42">Агент пишет быстро и докладывает уверенно. Проверка не верит докладу: она смотрит на сами изменения в git.</p>
+</div>
+<div class="bento">
+<article class="tile reveal">
+<h3 data-i18n="s43">«Готово, тесты прошли»</h3>
+<p data-i18n="s44">А они не прошли или не запускались. Проверка сама гоняет тесты на тех коммитах, которые попадут в ветку.</p>
+<div class="art">
+<div aria-hidden="true" class="chat">
+<div class="bubble agent" data-i18n="s45"><small>Агент</small>Готово, все тесты прошли ✓</div>
+<div class="bubble check" data-i18n="s46"><small>skilllayer</small>запустил сам: <span class="bad">1 failed</span>, 3 passed</div>
+</div>
+</div>
+</article>
+<article class="tile reveal" style="--d:.08s">
+<h3 data-i18n="s47">Тесты «починены»</h3>
+<p data-i18n="s48">Убран ассерт, добавлен skip, снижен порог покрытия — CI зелёный. Мы считаем, что изменение забрало из тестов.</p>
+<div class="art">
+<div aria-hidden="true" class="diff">
+<div class="file">tests/test_promo.py</div>
+<span class="row ctx">  price = apply(100, "TEN")</span>
+<span class="row del">- assert price == 90</span>
+<span class="row add" data-i18n="s49">+ # лишнее, убрал</span>
+<div class="tail" data-i18n="s50">ассертов стало меньше на 1</div>
+</div>
+</div>
+</article>
+<article class="tile reveal">
+<h3 data-i18n="s51">Закрытая зона</h3>
+<p data-i18n="s52">Агент поменял миграцию и тем же коммитом снял с неё защиту. Правила берутся из основной ветки — изменение не ослабит само себя.</p>
+<div class="art">
+<div aria-hidden="true" class="paths">
+<div class="path"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" viewbox="0 0 16 16"><rect height="7" rx="2" width="10" x="3" y="7"></rect><path d="M5.5 7V5a2.5 2.5 0 015 0v2"></path></svg>migrations/0042_index.sql<em class="lock" data-i18n="s53">закрыта политикой</em></div>
+<div class="path"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" viewbox="0 0 16 16"><path d="M4 2h5l3 3v9H4z"></path></svg>src/billing/promo.py<em class="fine" data-i18n="s54">можно менять</em></div>
+</div>
+</div>
+</article>
+<article class="tile reveal" style="--d:.08s">
+<h3 data-i18n="s55">Ключ в истории</h3>
+<p data-i18n="s56">Ключ закоммичен и удалён следующим коммитом: в итоге его нет, в истории — есть. Проверяется каждый коммит, а не только итог.</p>
+<div class="art">
+<div aria-hidden="true" class="timeline">
+<div class="commit bad" data-i18n="s57"><code>a3f1c09</code>добавил интеграцию<span class="tag">ключ добавлен</span></div>
+<div class="commit ok" data-i18n="s58"><code>5be72d4</code>убрал лишнее<span class="tag">ключ удалён</span></div>
+<div class="commit" data-i18n="s59"><code>итог</code>в диффе чисто — обычная проверка пройдёт</div>
+</div>
+</div>
+</article>
+</div>
+<p class="note reveal" data-i18n="s60">Примеры схематичны; настоящий вывод — в демо репозитория.</p>
+</div>
+</section>
+<!-- ============ ROADMAP ============ -->
+<section class="alt" id="roadmap">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="eyebrow"><span class="chip next" data-i18n="s61">Дальше</span></p>
+<h2 data-i18n="s62">От «тесты прошли» к «код не стыдно читать».</h2>
+<p data-i18n="s63">Следующий слой — проверки качества. Те же правила игры: никаких оценок «на глаз», только то, что можно показать пальцем.</p>
+</div>
+<div class="road-legend reveal">
+<span data-i18n="s64"><i class="chip next">Планируем</i> первая очередь</span>
+<span data-i18n="s65"><i class="chip later">Позже</i> после проверки на пилотах</span>
+<span data-i18n="s66">Ничего из этого раздела пока не выпущено.</span>
+</div>
+<div class="road">
+<article class="reveal"><span class="chip next" data-i18n="s67">Планируем</span><h3 data-i18n="s68">Проглоченные ошибки и пустые тесты</h3><p data-i18n="s69"><code>except: pass</code>, <code>assert True</code>, тест без единого ассерта. Часть такого уже ловится в проверке целостности тестов.</p></article>
+<article class="reveal" style="--d:.06s"><span class="chip next" data-i18n="s70">Планируем</span><h3 data-i18n="s71">Мёртвый добавленный код</h3><p data-i18n="s72">Функция, которую добавили и никто не вызывает. Смотрим только на символы из этого изменения, а не на весь репозиторий.</p></article>
+<article class="reveal" style="--d:.12s"><span class="chip next" data-i18n="s73">Планируем</span><h3 data-i18n="s74">Дублирование существующего</h3><p data-i18n="s75">Агент не заметил, что такая функция уже есть. Ответ с адресом: «повторяет <code>utils/date.py:12</code>».</p></article>
+<article class="reveal"><span class="chip next" data-i18n="s76">Планируем</span><h3 data-i18n="s77">Сложнее, чем соседи</h3><p data-i18n="s78">Вложенность и ветвление сравниваются с остальным файлом, а не с чужим магическим порогом.</p></article>
+<article class="reveal" style="--d:.06s"><span class="chip later" data-i18n="s79">Позже</span><h3 data-i18n="s80">Лишняя зависимость</h3><p data-i18n="s81">Подключена новая библиотека, хотя в модуле уже есть эквивалент.</p></article>
+<article class="reveal" style="--d:.12s"><span class="chip later" data-i18n="s82">Позже</span><h3 data-i18n="s83">Документация отстала</h3><p data-i18n="s84">Изменили флаг или переменную окружения, а описание не тронули.</p></article>
+</div>
+<div class="principle reveal">
+<div>
+<h3 data-i18n="s85">Агента разворачиваем только по трём признакам.</h3>
+<p data-i18n="s86">Если нет факта, адреса и действия — это не повод гонять агента по кругу, а заметка для человека. Так мы не превращаем один круг ревью в три круга споров с агентом.</p>
+<div class="triad"><span data-i18n="s87">Факт</span><span data-i18n="s88">Адрес</span><span data-i18n="s89">Действие</span></div>
+<p data-i18n="s90">Эталон — сам репозиторий: «сложнее всего в этом файле», а не «выше порога 10». Настраивать пороги не нужно.</p>
+</div>
+<div aria-label="Пример планируемого ответа агенту" class="finding" data-i18n-aria="s174">
+<div class="bar" data-i18n="s91"><b>skilllayer</b> · ответ агенту<span class="chip">Планируется</span></div>
+<dl class="body">
+<div><dt data-i18n="s92">Факт</dt><dd data-i18n="s93">Добавленная <code>format_day()</code> повторяет существующую функцию.</dd></div>
+<div><dt data-i18n="s94">Адрес</dt><dd><code>src/promo/format.py:18</code> ≈ <code>utils/date.py:12</code></dd></div>
+<div><dt data-i18n="s95">Действие</dt><dd data-i18n="s96">Удалить новую и вызвать <code>utils.date.format_date()</code>.</dd></div>
+</dl>
+</div>
+</div>
+<p class="note reveal" data-i18n="s97">Пример выдуманный, он показывает формат. Порядок работ определят ответы пилотов.</p>
+</div>
+</section>
+<!-- ============ HOW ============ -->
+<section id="how">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="eyebrow" data-i18n="s98">Как устроено</p>
+<h2 data-i18n="s99">Три шага. Агент может быть любым.</h2>
+<p data-i18n="s100">Мы смотрим на изменения в git, а не на того, кто их написал.</p>
+</div>
+<ol class="steps">
+<li class="reveal">
+<h3 data-i18n="s101">Задача в вашем CI</h3>
+<p data-i18n="s102">GitLab или GitHub, обязательная проверка для merge request. Ничего не нужно подключать к самому агенту.</p>
+</li>
+<li class="reveal" style="--d:.08s">
+<h3 data-i18n="s103">Проверки на точных коммитах</h3>
+<p data-i18n="s104">Тесты, целостность тестов, закрытые зоны, секреты, рамки для аккаунтов агентов и ваши сканеры как обязательные проверки. Не смогли проверить — не пропускаем.</p>
+</li>
+<li class="reveal" style="--d:.16s">
+<h3 data-i18n="s105">Доказательство</h3>
+<p data-i18n="s106">Квитанция с подписью, которую проверяемый код подделать не может, и строка на каждый запуск для SIEM.</p>
+</li>
+</ol>
+</div>
+</section>
+<!-- ============ RECEIPT ============ -->
+<section class="alt" id="receipt">
+<div class="wrap">
+<div class="split">
+<div class="reveal">
+<p class="eyebrow" data-i18n="s107">Квитанция</p>
+<h2 data-i18n="s108">После каждого прогона остаётся документ.</h2>
+<p data-i18n="s109">Не «CI был зелёным», а что именно судили, что запускали и что вернулось. Для ИБ, аудита и разговора с заказчиком.</p>
+<ul class="ticks">
+<li data-i18n="s110">Какие коммиты судились</li>
+<li data-i18n="s111">Что запускалось и что вернуло</li>
+<li data-i18n="s112">Какие пути изменились</li>
+<li data-i18n="s113">Кто и что одобрил руками</li>
+</ul>
+</div>
+<div aria-label="Схематичный пример квитанции" class="receipt reveal" data-i18n-aria="s175" style="--d:.12s">
+<header data-i18n="s114">Квитанция проверки <span>BLOCKED</span></header>
+<dl>
+<dt data-i18n="s115">коммиты</dt><dd>84b01c1c87..7ae1f7f5a9</dd>
+<dt data-i18n="s116">тесты</dt><dd data-i18n="s117">2 passed, код 0</dd>
+<dt data-i18n="s118">целостность тестов</dt><dd data-i18n="s119">ассертов −1</dd>
+<dt data-i18n="s120">секреты</dt><dd data-i18n="s121">не найдены</dd>
+<dt data-i18n="s122">закрытые зоны</dt><dd data-i18n="s123">не затронуты</dd>
+<dt data-i18n="s124">одобрено вручную</dt><dd data-i18n="s125">нет</dd>
+</dl>
+<footer data-i18n="s126">
+<svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.6" viewbox="0 0 16 16"><path d="M8 1.5l5.5 2v4.2c0 3-2.3 5.3-5.5 6.8-3.2-1.5-5.5-3.8-5.5-6.8V3.5z"></path><path d="M5.5 8l2 2 3-3.5"></path></svg>
+                подпись ключом из защищённой переменной CI · схематично
+              </footer>
+</div>
+</div>
+</div>
+</section>
+<!-- ============ IN SESSION ============ -->
+<section class="band" id="session">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="eyebrow" data-i18n="s127">Раньше, чем CI</p>
+<h2 data-i18n="s128">Агент возвращается к работе, не дойдя до вашего PR.</h2>
+<p data-i18n="s129">Отдельная проверка прямо в сессии агента: когда он собирается закончить, запускаются тесты. Красные — агента разворачивают, и он чинит сам.</p>
+</div>
+<div class="flow">
+<div class="node reveal">
+<small data-i18n="s130">Шаг 1</small>
+<strong data-i18n="s131">Агент говорит «готово»</strong>
+<p data-i18n="s132">Он собирается завершить сессию.</p>
+</div>
+<div aria-hidden="true" class="arrow">→</div>
+<div class="node hot reveal" style="--d:.08s">
+<small data-i18n="s133">Шаг 2 · skilllayer verify</small>
+<strong data-i18n="s134">Тесты запускает хук, а не агент</strong>
+<p data-i18n="s135">Читает реальное состояние git. Слова агента на вход не идут.</p>
+</div>
+<div aria-hidden="true" class="arrow">→</div>
+<div class="node good reveal" style="--d:.16s">
+<small data-i18n="s136">Шаг 3</small>
+<strong data-i18n="s137">Красные — назад в работу</strong>
+<p data-i18n="s138">Агент получает наблюдённые факты и дорабатывает до PR, а не после ревью.</p>
+</div>
+</div>
+<p class="note reveal" data-i18n="s139">Сейчас хук работает в Claude Code. Для остальных агентов — ворота в CI.</p>
+</div>
+</section>
+<!-- ============ LIMITS ============ -->
+<section id="limits">
+<div class="wrap narrow" style="width:min(1080px,100% - 48px)">
+<div class="section-head reveal">
+<p class="eyebrow" data-i18n="s140">Границы</p>
+<h2 data-i18n="s141">Чего мы не делаем. Прямо.</h2>
+<p data-i18n="s142">Лучше узнать об этом сейчас, чем на пилоте.</p>
+</div>
+<ul class="nots">
+<li class="reveal"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s143"><strong>Не ищем уязвимости.</strong> Это задача сканеров. Их можно запускать внутри контура как обязательную проверку, и результат попадёт в квитанцию.</span></li>
+<li class="reveal" style="--d:.06s"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s144"><strong>Не заменяем ревью</strong> и специалистов ИБ. Убираем из ревью то, что до него не должно было дойти.</span></li>
+<li class="reveal"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s145"><strong>Не выносим данные.</strong> Всё работает в вашем CI, без сети и без ИИ-модели.</span></li>
+<li class="reveal" style="--d:.06s"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s146"><strong>Пока нет сертификата ФСТЭК</strong> и записи в реестре российского ПО. Клиентов пока тоже нет: это прототип.</span></li>
+<li class="reveal"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s147"><strong>Ослабление тестов видим на Python и JavaScript/TypeScript.</strong> Тесты на других языках запускаются, но их ослабление не отслеживается.</span></li>
+<li class="reveal"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s148"><strong>Не судим замысел.</strong> Туда ли положен код и понятны ли имена — это по-прежнему ревьюер. Мы убираем механику, а не человека.</span></li>
+<li class="reveal" style="--d:.06s"><svg aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" viewbox="0 0 22 22"><circle cx="11" cy="11" r="9"></circle><path d="M7.5 7.5l7 7M14.5 7.5l-7 7"></path></svg><span data-i18n="s149"><strong>Хук в сессии — только для Claude Code.</strong> Остальные агенты проверяются на входе в ветку, в CI.</span></li>
+</ul>
+</div>
+</section>
+<!-- ============ INSTALL ============ -->
+<section class="alt" id="install">
+<div class="wrap">
+<div class="section-head reveal">
+<p class="eyebrow" data-i18n="s150">Установка</p>
+<h2 data-i18n="s151">Пятнадцать минут до первого отчёта.</h2>
+<p data-i18n="s152">Сначала режим наблюдения: ничего не блокируется, в репозиторий ничего не пишется.</p>
+</div>
+<div class="install reveal">
+<div class="window-bar"><i></i><i></i><i></i><span data-i18n="s153">терминал</span><button class="copy" data-i18n="s154" id="copy-install" type="button">Скопировать</button></div>
+<pre id="install-code"><span class="dim" data-i18n="s155"># один раз</span>
+<span class="p">$ </span>pipx install git+https://github.com/NickGBar/Skilllayer.git
 
-      <section>
-        <h2>Что делает агент — и чего не видит обычный CI</h2>
-        <div class="cards">
-          <article>
-            <h3>«Готово, тесты прошли»</h3>
-            <p>А они не прошли или не запускались. Мы не верим на слово: проверка сама запускает тесты на тех коммитах, которые попадут в ветку.</p>
-          </article>
-          <article>
-            <h3>Тесты «починены»</h3>
-            <p>Агент убрал ассерт, пометил тест skip или снизил порог покрытия — CI зелёный. Мы считаем, что изменение забрало из тестов, и не пропускаем.</p>
-          </article>
-          <article>
-            <h3>Закрытая зона</h3>
-            <p>Агент поменял миграцию и тем же коммитом снял с неё защиту. Правила берутся из основной ветки, поэтому изменение не может ослабить само себя.</p>
-          </article>
-          <article>
-            <h3>Ключ в истории</h3>
-            <p>Ключ закоммичен и удалён следующим коммитом: в итоговом изменении его нет, в истории — есть. Проверяется каждый коммит, а не только итог.</p>
-          </article>
-        </div>
-      </section>
-
-      <section>
-        <h2>Как это выглядит</h2>
-        <p>Агент убрал проверку, чтобы тесты «прошли». Тесты действительно зелёные — изменение всё равно не принято:</p>
-        <pre class="terminal" aria-label="Вывод skilllayer gate"><span class="dim">агент&gt;</span> Тесты зелёные. (Лишний ассерт убрал.)
-<span class="dim">$ skilllayer gate --base main</span>
-skilllayer gate — <span class="bad">✗ ЗАБЛОКИРОВАНО</span> (BLOCKED)
-  изменения: 84b01c1c87..7ae1f7f5a9 — коммитов: 1, с пометкой ИИ: 1, файлов: 2
-  <span class="ok">✓</span> защищённые пути: не затронуты
-  <span class="ok">✓</span> секреты: не найдены (проверено добавленных строк: 2)
-  <span class="bad">✗</span> целостность тестов: признаков ослабления: 1 (тестов +0/−0, ассертов +0/−1)
-      ассертов стало меньше на 1 — tests/test_promo.py:5
-  <span class="ok">✓</span> тесты: python -m pytest -q -p no:cacheprovider → 2 passed in 0.00s (код 0, 0,2 с)</pre>
-        <p class="note">Настоящий вывод из демо в репозитории: <code>DEMO_LANG=ru examples/gate/run_demo.sh</code>. Агента в демо нет — изменения заготовлены, проверка настоящая.</p>
-      </section>
-
-      <section>
-        <h2>Как устроено</h2>
-        <ol class="steps">
-          <li><strong>Задача в вашем CI.</strong> GitLab или GitHub, обязательная проверка для merge request. Агент может быть любым: смотрим на изменения в git, а не на агента.</li>
-          <li><strong>Проверки на точных коммитах.</strong> Тесты, целостность тестов, закрытые зоны, секреты, рамки для аккаунтов агентов и ваши сканеры как обязательные проверки. Не смогли проверить — не пропускаем.</li>
-          <li><strong>Доказательство.</strong> Квитанция с подписью, которую проверяемый код подделать не может, и строка на каждый запуск для SIEM.</li>
-        </ol>
-      </section>
-
-      <section>
-        <h2>Чего мы не делаем</h2>
-        <ul class="plain">
-          <li>Не ищем уязвимости — это задача сканеров. Их можно запускать внутри контура как обязательную проверку, и результат попадёт в квитанцию.</li>
-          <li>Не выносим данные: всё работает в вашем CI, без сети и без ИИ-модели. Одно и то же изменение — один и тот же вердикт.</li>
-          <li>Не заменяем ревью и специалистов ИБ.</li>
-          <li>Сертификата ФСТЭК и записи в реестре российского ПО пока нет. Клиентов пока тоже нет: это прототип.</li>
-          <li>Детектор ослабления тестов пока понимает Python и JavaScript/TypeScript. Тесты на других языках запускаются, но их ослабление не отслеживается.</li>
-        </ul>
-      </section>
-
-      <section id="pilot" class="pilot">
-        <h2>Бесплатный пилот</h2>
-        <p>Ищем первые команды, где код уже пишут ИИ-агенты, а за его безопасность отвечает ИБ, AppSec или технический директор.</p>
-        <ul class="plain">
-          <li>2–4 недели, один репозиторий.</li>
-          <li>Только отчёт: режим, который ничего не блокирует, пока вы не решите иначе.</li>
-          <li>В вашем CI; данные никуда не уходят.</li>
-          <li>На выходе — что контур поймал бы на ваших реальных изменениях.</li>
-        </ul>
-        <p>По лицензии пилот до 90 дней бесплатен для любой компании, а команды до 10 разработчиков пользуются бесплатно и после него.</p>
-        <p class="contact">Написать: <a href="mailto:nicolya.baranov@gmail.com">nicolya.baranov@gmail.com</a></p>
-      </section>
-    </main>
-    <footer>
-      <a href="https://github.com/NickGBar/Skilllayer#readme">English: README on GitHub</a> ·
-      <a href="https://github.com/NickGBar/Skilllayer/blob/main/docs/GATE.md">Техническое описание (англ.)</a> ·
-      <a href="privacy.html">Конфиденциальность</a>
-    </footer>
-  </body>
+<span class="dim" data-i18n="s156"># в вашем репозитории</span>
+<span class="p">$ </span>skilllayer gate --base origin/main --mode warn --lang ru</pre>
+</div>
+<div class="install-meta reveal">
+<span>Python 3.11+</span><span data-i18n="s157">Один репозиторий для начала</span><span data-i18n="s158">Ничего не уходит наружу</span>
+</div>
+</div>
+</section>
+<!-- ============ PILOT ============ -->
+<section id="pilot">
+<div class="wrap">
+<div class="pilot-card reveal">
+<p class="eyebrow" data-i18n="s159" style="color:#2997ff">Бесплатный пилот</p>
+<h2 data-i18n="s160">Посмотрим, что контур поймал бы у вас.</h2>
+<p data-i18n="s161">Ищем первые команды, где код уже пишут ИИ-агенты, а за его безопасность отвечает ИБ, AppSec или технический директор.</p>
+<ul class="pilot-points">
+<li data-i18n="s162"><b>2–4 недели</b>Один репозиторий.</li>
+<li data-i18n="s163"><b>Только отчёт</b>Ничего не блокируется, пока вы не решите иначе.</li>
+<li data-i18n="s164"><b>В вашем CI</b>Данные никуда не уходят.</li>
+<li data-i18n="s165"><b>На выходе — факты</b>Что контур поймал бы на ваших реальных изменениях.</li>
+</ul>
+<div class="actions">
+<a class="button primary" data-i18n="s166" href="mailto:nicolya.baranov@gmail.com?subject=Пилот%20SkillLayer">Написать про пилот</a>
+<a class="button secondary" data-i18n="s167" href="https://github.com/NickGBar/Skilllayer">Посмотреть код ›</a>
+</div>
+<p class="fine" data-i18n="s168">По лицензии пилот до 90 дней бесплатен для любой компании, а команды до 10 разработчиков пользуются бесплатно и после него. Если контур у вас ничего не поймал — мы так и скажем.</p>
+</div>
+</div>
+</section>
+</main>
+<footer class="site">
+<div class="wrap">
+<span data-i18n="s169">SkillLayer · прототип · nicolya.baranov@gmail.com</span>
+<nav aria-label="Ссылки" data-i18n-aria="s176">
+<a href="https://github.com/NickGBar/Skilllayer#readme">English: README</a>
+<a data-i18n="s170" href="https://github.com/NickGBar/Skilllayer/blob/main/docs/GATE.md">Техническое описание (англ.)</a>
+<a data-i18n="s171" href="privacy.html">Конфиденциальность</a>
+</nav>
+</div>
+</footer>
+<script src="site.js"></script>
+</body>
 </html>
