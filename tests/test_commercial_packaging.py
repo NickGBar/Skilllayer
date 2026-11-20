@@ -52,12 +52,13 @@ def test_results_template_has_required_privacy_and_commercial_fields():
 def test_landing_page_states_the_gate_honestly_and_has_no_fake_social_proof():
     text = _read("docs/index.html")
     for phrase in (
-        "Код от ИИ-агента попадает в ветку, только если проверки действительно прошли.",
+        "изменение попадает в ветку, только если обязательные проверки действительно прошли",
+        "«Не удалось» зелёным не бывает",
         "Обсудить пилот",
         "https://github.com/NickGBar/Skilllayer",
         "прототип",
-        "Сертификата ФСТЭК и записи в реестре российского ПО пока нет",
-        "Клиентов пока тоже нет",
+        "Пока нет сертификата ФСТЭК",
+        "и записи в реестре российского ПО. Клиентов пока тоже нет",
         "Не ищем уязвимости",
     ):
         assert phrase in text
