@@ -666,15 +666,24 @@ class TestRunner:
                 output = f"{stdout}\n{stderr}"
                 test_count = detect_test_count(output)
                 no_tests_discovered = test_count == 0
+                passed = sum(int(match) for match in re.findall(r"(\d+) passed", output))
+                failed = sum(int(match) for match in re.findall(r"(\d+) failed", output)) + sum(int(match) for match in re.findall(r"(\d+) error", output))
+                # unittest reports totals as "Ran N tests" and places failures,
+                # errors and skips in its final OK/FAILED summary.
+                if "unittest" in command and test_count is not None:
+                    summary = re.search(r"(?m)^(?:OK|FAILED)(?: \(([^\n]*)\))?\s*$", output)
+                    if summary:
+                        counts = {key: int(value) for key, value in re.findall(r"(failures|errors|skipped|expected failures|unexpected successes)=(\d+)", summary.group(1) or "")}
+                        failed = counts.get("failures", 0) + counts.get("errors", 0) + counts.get("unexpected successes", 0)
+                        passed = max(0, test_count - failed - counts.get("skipped", 0) - counts.get("expected failures", 0))
                 return self._classify_environment_result(repo_path, {
                     "available": True,
                     "command": command,
                     "returncode": process.returncode,
                     "test_count": test_count,
                     "no_tests_discovered": no_tests_discovered,
-                    "passed": sum(int(match) for match in re.findall(r"(\d+) passed", output)),
-                    "failed": sum(int(match) for match in re.findall(r"(\d+) failed", output))
-                    + sum(int(match) for match in re.findall(r"(\d+) error", output)),
+                    "passed": passed,
+                    "failed": failed,
                     "runtime_seconds": time.perf_counter() - started,
                     "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
                     "stdout": stdout[-4000:],

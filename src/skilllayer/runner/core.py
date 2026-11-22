@@ -1796,7 +1796,7 @@ def build_run_tests_artifacts(test_result: dict[str, Any]) -> dict[str, Any]:
     tests_run = tests_were_run(test_result)
     tests_passed = test_result_passed(test_result)
     failed_tests = parse_test_failures(test_result)
-    failure_count = len(failed_tests) or int(test_result.get("failed", 0) or 0)
+    failure_count = int(test_result.get("failed", 0) or 0) if "unittest" in (test_result.get("command") or []) else len(failed_tests) or int(test_result.get("failed", 0) or 0)
     outcome = classify_run_tests_outcome(
         test_result,
         tests_run=tests_run,
@@ -3062,7 +3062,7 @@ def parse_test_failures(test_result: dict[str, Any]) -> list[dict[str, Any]]:
         (r"([^\s:]+?\.py):(\d+):\s+(.+)", "python_trace"),
         (r"FAIL:\s+([^\s(]+)\s+\(([^)]+)\)", "unittest_fail"),
         (r"ERROR:\s+([^\s(]+)\s+\(([^)]+)\)", "unittest_error"),
-        (r"\bFAIL\s+([^\s]+)(?:\s+(.+))?", "node_fail"),
+        (r"\bFAIL[ \t]+([^\s]+)(?:[ \t]+(.+))?", "node_fail"),
         (r"at\s+(?:[^(]+\()?([^()\s]+?\.(?:js|ts)):(\d+):\d+\)?", "node_trace"),
     ]
     for pattern, kind in patterns:
