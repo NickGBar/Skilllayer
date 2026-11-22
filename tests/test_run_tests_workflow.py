@@ -926,7 +926,7 @@ def test_unittest_counts_pass_fail_and_skips(tmp_path: Path) -> None:
     (tmp_path / 'test_counts.py').write_text(
         'import unittest\n'
         'class Counts(unittest.TestCase):\n'
-        '    def test_pass(self): self.assertTrue(True)\n'
+        '    def test_pass(self): self.assertEqual(2 * 3, 6)\n'
         '    def test_fail(self): self.assertEqual(1, 2)\n'
         '    @unittest.skip("not applicable")\n'
         '    def test_skip(self): pass\n'
