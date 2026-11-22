@@ -918,3 +918,31 @@ class TestNestedRecursionDoesNotOccurEndToEnd:
             f"self-referential repro took {elapsed:.1f}s — suspiciously slow "
             f"for a call that should be blocked almost instantly"
         )
+
+
+def test_unittest_counts_pass_fail_and_skips(tmp_path: Path) -> None:
+    from skilllayer.runner.core import build_run_tests_artifacts
+
+    (tmp_path / 'test_counts.py').write_text(
+        'import unittest\n'
+        'class Counts(unittest.TestCase):\n'
+        '    def test_pass(self): self.assertEqual(2 * 3, 6)\n'
+        '    def test_fail(self): self.assertEqual(1, 2)\n'
+        '    @unittest.skip("not applicable")\n'
+        '    def test_skip(self): pass\n'
+    )
+    runner = TestRunner(command=[sys.executable, '-m', 'unittest', 'discover', '-v'])
+    result = build_run_tests_artifacts(runner.run(tmp_path))
+    assert result['pass_count'] == 1
+    assert result['failure_count'] == 1
+    assert len([item for item in result['failed_tests'] if item['kind'] == 'unittest_fail']) == 1
+    assert not any(item['kind'] == 'node_fail' for item in result['failed_tests'])
+
+
+def test_unittest_count_single_success(unittest_pass_repo: Path) -> None:
+    from skilllayer.runner.core import build_run_tests_artifacts
+
+    runner = TestRunner(command=[sys.executable, '-m', 'unittest', 'discover', '-s', '.'])
+    result = build_run_tests_artifacts(runner.run(unittest_pass_repo))
+    assert result['pass_count'] == 1
+    assert result['failure_count'] == 0
