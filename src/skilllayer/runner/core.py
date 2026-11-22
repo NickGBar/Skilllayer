@@ -7715,6 +7715,46 @@ def _build_safe_change_plan(task: str, relevant_files: list[str], repo_info: dic
     return plan
 
 
+def _test_integrity_risks(repo: Path, changed_files: list[str]) -> list[str]:
+    """Flag narrow Python test weakening; never claim exhaustive detection."""
+    import ast
+    import subprocess
+
+    def checks(source: str) -> dict[str, int]:
+        tree = ast.parse(source)
+        result = {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test_'):
+                count = 0
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Assert) and not (isinstance(child.test, ast.Constant) and child.test.value is True):
+                        count += 1
+                    elif isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) and child.func.attr.startswith('assert'):
+                        count += 1
+                result[node.name] = result.get(node.name, 0) + count
+        return result
+
+    risks = []
+    for path in changed_files:
+        name = Path(path).name
+        if not (name.startswith('test_') or name.endswith('_test.py')) or not name.endswith('.py'):
+            continue
+        old = subprocess.run(['git', '-C', str(repo), 'show', f'HEAD:{path}'], capture_output=True, text=True)
+        if old.returncode:
+            continue  # New test file has no existing checks to weaken.
+        try:
+            before = checks(old.stdout)
+            new_path = repo / path
+            after = checks(new_path.read_text(encoding='utf-8')) if new_path.exists() else {}
+        except (OSError, UnicodeError, SyntaxError):
+            risks.append(f'Test integrity could not be checked for {path}; review manually.')
+            continue
+        for test, old_count in before.items():
+            if old_count and (test not in after or after[test] < old_count):
+                risks.append(f'Possible test weakening in {path}: {test} has fewer substantive assertions; review manually.')
+    return risks
+
+
 def build_safe_change_artifacts(
     repo: Path,
     task: str,
@@ -7845,6 +7885,7 @@ def build_safe_change_artifacts(
 
     # phase == "validate": inspect the diff the host agent produced and run tests.
     changed_files = [f["path"] for f in git_artifacts.get("changed_files", []) or []]
+    risks.extend(_test_integrity_risks(repo, changed_files))
     tests_run = False
     tests_passed: bool | None = None
     tests_failed: int | None = None

@@ -84,6 +84,21 @@ class TestPlanPhase:
 
 
 class TestValidatePhase:
+    def test_replaced_assertion_is_not_unconditionally_validated(self, tmp_path):
+        repo = _passing_repo(tmp_path)
+        (repo / 'app.py').write_text("def greet(name):\n    return 'wrong'\n")
+        (repo / 'tests' / 'test_app.py').write_text('def test_greet():\n    assert True\n')
+        r = build_safe_change_artifacts(repo, 'validate changes', phase='validate')
+        assert r['tests_passed'] is True
+        assert r['verdict'] != 'CHANGE_VALIDATED'
+        assert any('weakening' in risk for risk in r['risks'])
+
+    def test_replaced_meaningful_assertion_is_allowed(self, tmp_path):
+        repo = _passing_repo(tmp_path)
+        (repo / 'tests' / 'test_app.py').write_text("from app import greet\ndef test_greet():\n    assert greet('b') == 'hello b'\n")
+        r = build_safe_change_artifacts(repo, 'validate changes', phase='validate')
+        assert r['verdict'] == 'CHANGE_VALIDATED'
+
     def test_passing_change_is_validated(self, tmp_path):
         repo = _passing_repo(tmp_path)
         (repo / "app.py").write_text(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import platform
 import re
 import sys
@@ -74,6 +75,10 @@ def export_anonymous_telemetry(
     include_local_paths: bool = False,
     allow_unsafe: bool = False,
 ) -> dict[str, Any]:
+    if include_raw_tasks or include_local_paths or allow_unsafe:
+        return {"success": False, "export_written": False, "output_path": None,
+                "error": "Anonymous export accepts aggregate-only data; raw or unsafe options are not supported.",
+                "privacy_scan": {"passed": False, "reason": "unsafe_export_options"}}
     sanitization = new_sanitization_report()
     sources_included: list[str] = []
     sources_missing: list[str] = []
@@ -108,6 +113,25 @@ def export_anonymous_telemetry(
         "no_network_requests": True,
         "automatic_upload": False,
     }
+    # An allowlist is the safety boundary: source-controlled map keys and free
+    # text never enter an anonymous export, even when regexes miss identifiers.
+    allowed = {
+        "workflow_usage": ("total_runs", "successful_runs", "workflow_found_count", "workflow_executed_count", "fallback_triggered_count"),
+        "demand_categories": ("total_events",),
+        "workflow_misses": ("workflow_missing_count",),
+        "cost_summary": ("total_usage_events", "total_input_tokens", "total_output_tokens", "total_tokens", "unknown_usage_events", "cost_known_events", "cost_unknown_events", "total_cost_usd"),
+        "cli_activity": ("total_cli_commands",),
+        "client": ("tool_invocations_total", "skilllayer_run_count", "skilllayer_inspect_count"),
+    }
+    summary = export["summary"]
+    export["summary"] = {group: {key: summary[group][key] for key in fields
+                                 if type(summary[group].get(key)) in (int, float)
+                                 and math.isfinite(summary[group][key])}
+                         for group, fields in allowed.items()}
+    export["created_at"] = None
+    export["skilllayer_version"] = None
+    export["sources_included"] = []
+    export["sources_missing"] = []
     export = sanitize_export(export, include_raw_tasks=include_raw_tasks, include_local_paths=include_local_paths, report=sanitization)
     scan = privacy_scan(export)
     export["privacy_scan"] = scan
@@ -399,6 +423,62 @@ def redact_secrets_in_text(text: str, report: dict[str, int]) -> str:
 def privacy_scan(payload: Any) -> dict[str, Any]:
     text = json.dumps(payload, sort_keys=True)
     findings = []
+    # This scanner accepts only the aggregate export schema. Unknown keys and
+    # string values are not evidence that a payload is anonymous.
+    safe_keys = {
+        'export_version', 'created_at', 'skilllayer_version', 'privacy_mode', 'contains_raw_tasks',
+        'contains_local_paths', 'sources_included', 'sources_missing', 'summary', 'sanitization_report',
+        'privacy_scan', 'no_network_requests', 'automatic_upload', 'workflow_usage', 'demand_categories',
+        'workflow_misses', 'cost_summary', 'cli_activity', 'client', 'total_runs', 'successful_runs',
+        'workflow_found_count', 'workflow_executed_count', 'fallback_triggered_count', 'total_events',
+        'workflow_missing_count', 'total_usage_events', 'total_input_tokens', 'total_output_tokens',
+        'total_tokens', 'unknown_usage_events', 'cost_known_events', 'cost_unknown_events', 'total_cost_usd',
+        'total_cli_commands', 'tool_invocations_total', 'skilllayer_run_count', 'skilllayer_inspect_count',
+        'redacted_task_fields', 'redacted_path_fields', 'redacted_email_fields', 'redacted_secret_fields',
+    }
+    def unknown(value: Any) -> bool:
+        if isinstance(value, dict):
+            return any(k not in safe_keys or unknown(v) for k, v in value.items())
+        if isinstance(value, list):
+            return bool(value)
+        if isinstance(value, str):
+            return value not in {'1.0', 'anonymous'}
+        return value is not None and type(value) not in (bool, int, float)
+    if unknown(payload):
+        findings.append({'pattern_type': 'unapproved_content', 'count': 1, 'example': '[REDACTED]'})
+    # A set of permitted names alone is not a schema: for example,
+    # {"summary": {"total_runs": "anonymous"}} must not pass as an export.
+    root_keys = {'export_version', 'created_at', 'skilllayer_version', 'privacy_mode',
+                 'contains_raw_tasks', 'contains_local_paths', 'sources_included',
+                 'sources_missing', 'summary', 'sanitization_report', 'privacy_scan',
+                 'no_network_requests', 'automatic_upload'}
+    groups = {
+        'workflow_usage': {'total_runs', 'successful_runs', 'workflow_found_count', 'workflow_executed_count', 'fallback_triggered_count'},
+        'demand_categories': {'total_events'}, 'workflow_misses': {'workflow_missing_count'},
+        'cost_summary': {'total_usage_events', 'total_input_tokens', 'total_output_tokens', 'total_tokens', 'unknown_usage_events', 'cost_known_events', 'cost_unknown_events', 'total_cost_usd'},
+        'cli_activity': {'total_cli_commands'},
+        'client': {'tool_invocations_total', 'skilllayer_run_count', 'skilllayer_inspect_count'},
+    }
+    def numeric_map(value: Any, allowed: set[str]) -> bool:
+        return isinstance(value, dict) and set(value) <= allowed and all(
+            type(v) in (int, float) and math.isfinite(v) for v in value.values())
+
+    valid_schema = isinstance(payload, dict) and set(payload) == root_keys
+    if valid_schema:
+        summary = payload['summary']
+        valid_schema = (
+            payload['export_version'] == EXPORT_VERSION and payload['privacy_mode'] == 'anonymous'
+            and payload['created_at'] is None and payload['skilllayer_version'] is None
+            and payload['contains_raw_tasks'] is False and payload['contains_local_paths'] is False
+            and payload['sources_included'] == [] and payload['sources_missing'] == []
+            and payload['no_network_requests'] is True and payload['automatic_upload'] is False
+            and payload['privacy_scan'] == {}
+            and isinstance(summary, dict) and set(summary) == set(groups)
+            and all(numeric_map(summary[g], fields) for g, fields in groups.items())
+            and numeric_map(payload['sanitization_report'], {'redacted_task_fields', 'redacted_path_fields', 'redacted_email_fields', 'redacted_secret_fields'})
+        )
+    if not valid_schema:
+        findings.append({'pattern_type': 'invalid_aggregate_schema', 'count': 1, 'example': '[REDACTED]'})
     for pattern_name, pattern in PRIVACY_PATTERNS.items():
         matches = pattern.findall(text)
         if matches:
