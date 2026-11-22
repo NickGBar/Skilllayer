@@ -148,7 +148,7 @@ def export_anonymous_telemetry(
             "sanitization_report": sanitization,
             "privacy_scan": scan,
             "export_summary": build_export_result_summary(export),
-            "error": "Privacy scan failed. Unsafe export was not written. Use --allow-unsafe only after manual review.",
+            "error": "Privacy scan failed. The export was not written. Review the privacy scan findings before trying again.",
             "validation_outputs": validation["outputs"],
         }
 

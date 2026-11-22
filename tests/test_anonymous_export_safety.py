@@ -33,3 +33,16 @@ def test_unsafe_export_options_are_rejected(tmp_path, monkeypatch):
         assert not result['success']
         assert not result['privacy_scan']['passed']
         assert not (tmp_path / 'export.json').exists()
+
+
+def test_failed_scan_does_not_recommend_unsafe_export(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr('skilllayer.telemetry_export.privacy_scan', lambda _: {
+        'passed': False, 'finding_count': 1, 'findings': [], 'patterns_checked': [],
+    })
+    output = tmp_path / 'export.json'
+    result = export_anonymous_telemetry(output=output)
+    assert not result['success']
+    assert not result['export_written']
+    assert '--allow-unsafe' not in result['error']
+    assert not output.exists()
