@@ -134,6 +134,9 @@ unknown source, source block/local-only, transformation, or narrow checks
 clearing. A content/detector block is deliberately generic: the experiment
 does not yet provide reliable detector-specific explanations. Neither raw
 input nor the supplied source identifier is included in the event.
+The file-event probe additionally emits a generic `path_policy_blocked` code
+for a blocked lexical path without printing the path or matched rule. It does
+not distinguish the reason for a path rejection and does not persist a log.
 
 `analyze_guarded` is a separate experiment entry point that blocks an unknown
 source by default and requires explicit `source_authorized=True` before an

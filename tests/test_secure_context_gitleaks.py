@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from experiments.secure_context_gitleaks import scan
 from experiments.secure_context_hybrid_poc import Decision, analyze_guarded, analyze_with_gitleaks
-from experiments.secure_context_audit_probe import evaluate, evaluate_policy_event
+from experiments.secure_context_audit_probe import evaluate, evaluate_file_event, evaluate_policy_event
 from experiments.secure_context_hybrid_route_probe import route
 
 
@@ -99,6 +99,17 @@ class GitleaksProbeTests(unittest.TestCase):
         self.assertEqual(event["reason"], "unknown_source")
         self.assertNotIn("private", str(event))
         self.assertIs(event["safety_verified"], False)
+
+    def test_file_policy_audit_reason_does_not_reveal_path_or_content(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": [],
+                             "allowed_paths": ["public"], "forbidden_paths": ["public/private"]})
+        with patch("experiments.secure_context_audit_probe.evaluate_with_reason") as content:
+            event = evaluate_file_event("synthetic sensitive value", "binary", "public/private/secret.py", "public", policy)
+            self.assertEqual(event["reason"], "path_policy_blocked")
+            self.assertEqual(event["decision"], "BLOCK")
+            self.assertNotIn("private", str(event))
+            self.assertNotIn("sensitive", str(event))
+            content.assert_not_called()
 
     def test_unknown_sources_block_before_detectors(self):
         with patch("experiments.secure_context_hybrid_poc.analyze_with_gitleaks") as inner:

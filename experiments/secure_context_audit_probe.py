@@ -22,6 +22,25 @@ def evaluate_policy_event(text: str, binary: str, source: str, raw_policy: str) 
             "scope": "synthetic_local_probe", "safety_verified": False}
 
 
+def evaluate_file_event(text: str, binary: str, path: str, source: str,
+                        raw_policy: str) -> dict[str, str | bool]:
+    """Emit bounded policy/path reason without storing raw metadata or text."""
+    from experiments.secure_context_path_policy import Decision, decide_path
+    from experiments.secure_context_policy_config import parse_policy
+
+    try:
+        policy = parse_policy(raw_policy)
+    except (TypeError, ValueError):
+        decision, reason = Decision.BLOCK, "invalid_policy"
+    else:
+        if decide_path(path, allowed=policy.allowed_paths, forbidden=policy.forbidden_paths) != Decision.ALLOW:
+            decision, reason = Decision.BLOCK, "path_policy_blocked"
+        else:
+            decision, _, reason = evaluate_with_reason(text, binary, source, raw_policy)
+    return {"decision": decision.value, "reason": reason, "network_attempted": False,
+            "scope": "synthetic_local_probe", "safety_verified": False}
+
+
 if __name__ == "__main__":
     import json
     import os
