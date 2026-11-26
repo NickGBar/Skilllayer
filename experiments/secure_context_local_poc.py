@@ -32,7 +32,10 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
             with tempfile.TemporaryDirectory(prefix="secure-context-") as directory:
                 Path(directory, "input.txt").write_text(value, encoding="utf-8")
                 result = build_detect_secrets_artifacts(Path(directory))
-                return bool(result.get("success") and result.get("scan_complete")), bool(result.get("findings"))
+                if (result.get("success") is not True or result.get("scan_complete") is not True
+                        or not isinstance(result.get("findings"), list)):
+                    return False, False
+                return True, bool(result["findings"])
 
         entities = ["EMAIL_ADDRESS", "PHONE_NUMBER"]
         complete, secret = secrets(text)

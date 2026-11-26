@@ -11,6 +11,8 @@ and `presidio-anonymizer==2.2.364`. From the repository root run:
 
 ```sh
 PYTHONPATH=.:src python -m experiments.secure_context_local_poc
+PYTHONPATH=.:src python -m experiments.secure_context_matrix
+PYTHONPATH=.:src python -m experiments.secure_context_route_probe
 PYTHONPATH=.:src python -m unittest discover -s tests -p test_secure_context_local_poc.py -v
 ```
 
@@ -30,6 +32,11 @@ precedence: incomplete scan or detected secret blocks; restricted material stays
 local; supported PII is transformed and scanned again; otherwise allow.
 
 Observed with Python 3.13 and the versions above: clean `ALLOW`, email/phone
-`TRANSFORM`, secret `BLOCK`, restricted `LOCAL_ONLY`; four targeted tests pass.
+`TRANSFORM`, secret `BLOCK`, restricted `LOCAL_ONLY`; six targeted tests pass.
+The fixed 20-case matrix matched 20 expected decisions; one local run took
+1.29 seconds including the first import. These examples are not a statistical
+sample. A separate fake-transport probe sent the clean and transformed values
+to an in-memory list and made zero simulated sends for blocked/local-only cases.
+There is no real transport or interception in that experiment.
 Full suite, real customer data, Gitleaks integration, network interception,
 latency, and real-world false-positive/false-negative rates were not evaluated.

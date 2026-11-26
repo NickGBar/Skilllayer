@@ -38,6 +38,21 @@ class LocalPolicyProbeTests(unittest.TestCase):
         self.assertEqual(decide(detector_complete=True, secret=True, pii=True,
                                 restricted=True, transformable=True), Decision.BLOCK)
 
+    def test_incomplete_and_malformed_scanner_results_block(self):
+        for result in ({"success": True, "scan_complete": False, "findings": []},
+                       {"success": True, "scan_complete": True},
+                       {"success": True, "scan_complete": True, "findings": None}):
+            with self.subTest(result=result), patch(
+                "experiments.secure_context_local_poc.build_detect_secrets_artifacts", return_value=result
+            ):
+                self.assertEqual(analyze("clean"), (Decision.BLOCK, None))
+
+    def test_second_scan_failure_blocks_transformed_output(self):
+        responses = [{"success": True, "scan_complete": True, "findings": []},
+                     {"success": False, "scan_complete": False, "findings": []}]
+        with patch("experiments.secure_context_local_poc.build_detect_secrets_artifacts", side_effect=responses):
+            self.assertEqual(analyze("Email irina.smirnova@example.com"), (Decision.BLOCK, None))
+
 
 if __name__ == "__main__":
     unittest.main()
