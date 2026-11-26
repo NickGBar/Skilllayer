@@ -45,6 +45,7 @@ SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_policy_route_probe
 PYTHONPATH=.:src python -m experiments.secure_context_phone_probe
 PYTHONPATH=.:src python -m experiments.secure_context_rules_probe
+PYTHONPATH=.:src python -m experiments.secure_context_symlink_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_latency_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
@@ -164,6 +165,8 @@ forbidden prefixes priority. An allowed path still goes through source and
 content checks. This is lexical matching on a caller-supplied string: it does
 not resolve symlinks, authenticate the source or bind a path to file contents.
 It is not a filesystem security boundary and must not authorize real egress.
+The synthetic symlink probe demonstrates a specific bypass: a lexical path
+under an allowed prefix can resolve through a symlink into a disallowed tree.
 The synthetic JSON policy can contain both `allowed_paths` and
 `forbidden_paths`; `evaluate_central_file` reads both source and path rules
 from that policy, and blocks when path rules are absent. `evaluate_central_bundle`
