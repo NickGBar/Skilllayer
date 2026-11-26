@@ -36,3 +36,32 @@ def evaluate_file(text: str, binary: str, *, path: str, source: str, raw_policy:
         return Decision.BLOCK, None
     from experiments.secure_context_policy_config import evaluate_with_policy
     return evaluate_with_policy(text, binary, source, raw_policy)
+
+
+def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: str,
+                    raw_policy: str, allowed: tuple[str, ...],
+                    forbidden: tuple[str, ...]) -> tuple[Decision, tuple[str, ...] | None]:
+    """Synthetic atomic bundle; never return a partial allowed output."""
+    if (not isinstance(files, tuple) or not 1 <= len(files) <= 20
+            or any(not isinstance(item, tuple) or len(item) != 2
+                   or not isinstance(item[0], str) or not isinstance(item[1], str) for item in files)):
+        return Decision.BLOCK, None
+    if len({path for path, _ in files}) != len(files):
+        return Decision.BLOCK, None
+    if any(decide_path(path, allowed=allowed, forbidden=forbidden) != Decision.ALLOW for path, _ in files):
+        return Decision.BLOCK, None
+    outputs = []
+    transformed = False
+    for path, text in files:
+        decision, output = evaluate_file(text, binary, path=path, source=source, raw_policy=raw_policy,
+                                         allowed=allowed, forbidden=forbidden)
+        if decision in (Decision.BLOCK, Decision.LOCAL_ONLY):
+            return decision, None
+        if decision not in (Decision.ALLOW, Decision.TRANSFORM) or not isinstance(output, str):
+            return Decision.BLOCK, None
+        transformed |= decision == Decision.TRANSFORM
+        outputs.append(output)
+    # Aliases currently have per-file scope; they can collide across files.
+    if transformed and len(files) > 1:
+        return Decision.BLOCK, None
+    return (Decision.TRANSFORM if transformed else Decision.ALLOW), tuple(outputs)

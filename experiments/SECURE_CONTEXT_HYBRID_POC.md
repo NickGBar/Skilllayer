@@ -151,6 +151,12 @@ content checks. This is lexical matching on a caller-supplied string: it does
 not resolve symlinks, authenticate the source or bind a path to file contents.
 It is not a filesystem security boundary and must not authorize real egress.
 
+The synthetic bundle probe never returns partial output if a path or content
+check blocks. A one-file transformed bundle is supported; a multi-file bundle
+that requires transformation is blocked because the current aliases are
+scoped to each file and may collide. Clean multi-file examples may pass only
+the narrow configured checks, which still cannot establish confidentiality.
+
 The JSON policy probe has a fixed schema and rejects duplicate keys, unknown
 fields, invalid actions and empty restricted terms. Unknown sources are
 blocked. The synthetic policy example covers allow, local-only and block, and

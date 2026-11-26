@@ -3,7 +3,7 @@ import unittest
 import json
 import os
 from unittest.mock import patch
-from experiments.secure_context_path_policy import Decision, decide_path, evaluate_file
+from experiments.secure_context_path_policy import Decision, decide_path, evaluate_bundle, evaluate_file
 
 
 class PathPolicyTests(unittest.TestCase):
@@ -51,6 +51,40 @@ class PathPolicyTests(unittest.TestCase):
         decision, output = evaluate_file(text, os.environ["SECURE_CONTEXT_GITLEAKS"], path="public/file.py",
                                          source="public", raw_policy=policy, allowed=("public",), forbidden=())
         self.assertEqual((decision, output), (Decision.BLOCK, None))
+
+    def test_bundle_denied_path_never_returns_partial_content(self):
+        files = (("public/a.py", "one"), ("private/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file") as evaluator:
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+            evaluator.assert_not_called()
+
+    def test_bundle_late_failure_discards_earlier_output(self):
+        files = (("public/a.py", "one"), ("public/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.BLOCK, None)]):
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
+    def test_multifile_transform_blocks_until_alias_scope_is_shared(self):
+        files = (("public/a.py", "one"), ("public/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.TRANSFORM, "masked"), (Decision.ALLOW, "two")]):
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
+    def test_bundle_success_and_single_transform(self):
+        files = (("public/a.py", "one"), ("public/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.ALLOW, "two")]):
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.ALLOW, ("one", "two")))
+        with patch("experiments.secure_context_path_policy.evaluate_file", return_value=(Decision.TRANSFORM, "masked")):
+            self.assertEqual(evaluate_bundle(files[:1], "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.TRANSFORM, ("masked",)))
+
+    def test_bundle_duplicate_or_malformed_input_blocks(self):
+        for files in ((), (("public/a.py", "one"), ("public/a.py", "two")), (("public/a.py",),), (("public/a.py", 5),)):
+            with self.subTest(files=files):
+                self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                                 allowed=("public",), forbidden=()), (Decision.BLOCK, None))
 
 
 if __name__ == "__main__":
