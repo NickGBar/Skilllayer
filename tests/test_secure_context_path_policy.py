@@ -89,7 +89,8 @@ class PathPolicyTests(unittest.TestCase):
 
     def test_bundle_success_and_single_transform(self):
         files = (("public/a.py", "one"), ("public/b.py", "two"))
-        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.ALLOW, "two")]):
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.ALLOW, "two")]), \
+             patch("experiments.secure_context_policy_config.evaluate_with_policy", return_value=(Decision.ALLOW, "onetwo")):
             self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                              allowed=("public",), forbidden=()), (Decision.ALLOW, ("one", "two")))
         with patch("experiments.secure_context_path_policy.evaluate_file", return_value=(Decision.TRANSFORM, "masked")):
@@ -101,6 +102,32 @@ class PathPolicyTests(unittest.TestCase):
             with self.subTest(files=files):
                 self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                                  allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
+    def test_combined_context_failure_discards_all_outputs(self):
+        files = (("public/a.py", "one"), ("public/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.ALLOW, "two")]), \
+             patch("experiments.secure_context_policy_config.evaluate_with_policy", return_value=(Decision.BLOCK, None)):
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_real_detector_blocks_secret_split_across_files(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": []})
+        files = (("public/a.py", "TOKEN=ghp_"), ("public/b.py", "A1b2C3d4" * 5))
+        for path, value in files:
+            self.assertEqual(evaluate_file(value, os.environ["SECURE_CONTEXT_GITLEAKS"], path=path,
+                                           source="public", raw_policy=policy, allowed=("public",), forbidden=())[0], Decision.ALLOW)
+        decision, output = evaluate_bundle(files, os.environ["SECURE_CONTEXT_GITLEAKS"], source="public",
+                                           raw_policy=policy, allowed=("public",), forbidden=())
+        self.assertEqual((decision, output), (Decision.BLOCK, None))
+
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_combined_context_with_split_email_blocks(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": []})
+        files = (("public/a.py", "a.person@"), ("public/b.py", "example.com"))
+        decision, output = evaluate_bundle(files, os.environ["SECURE_CONTEXT_GITLEAKS"], source="public",
+                                           raw_policy=policy, allowed=("public",), forbidden=())
+        self.assertEqual((decision, output), (Decision.BLOCK, None))
 
 
 if __name__ == "__main__":

@@ -162,6 +162,10 @@ check blocks. A one-file transformed bundle is supported; a multi-file bundle
 that requires transformation is blocked because the current aliases are
 scoped to each file and may collide. Clean multi-file examples may pass only
 the narrow configured checks, which still cannot establish confidentiality.
+For an allowed multi-file bundle the probe also checks the concatenated output:
+synthetic tests cover a GitHub-shaped token and an email split across two
+individually clear fragments. This is a single conservative concatenation;
+it does not cover every encoding, separator, ordering or actual client payload.
 
 The JSON policy probe has a fixed schema and rejects duplicate keys, unknown
 fields, invalid actions and empty restricted terms. Unknown sources are

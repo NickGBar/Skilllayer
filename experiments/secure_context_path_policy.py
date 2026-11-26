@@ -73,4 +73,16 @@ def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: 
     # Aliases currently have per-file scope; they can collide across files.
     if transformed and len(files) > 1:
         return Decision.BLOCK, None
+    if len(files) > 1:
+        # Check the combined payload too: a secret can be split at a boundary.
+        # This conservative concatenation is not a guarantee for all encodings
+        # or for contexts assembled by another component.
+        try:
+            from experiments.secure_context_policy_config import evaluate_with_policy
+            combined = "".join(outputs)
+            decision, output = evaluate_with_policy(combined, binary, source, raw_policy)
+            if decision != Decision.ALLOW or output != combined:
+                return Decision.BLOCK, None
+        except Exception:
+            return Decision.BLOCK, None
     return (Decision.TRANSFORM if transformed else Decision.ALLOW), tuple(outputs)
