@@ -14,6 +14,8 @@ def analyze_with_gitleaks(text: str, binary: str, *, restricted: bool = False) -
         return decision, None
     if output is None:
         return Decision.BLOCK, None
+    if decision == Decision.ALLOW:
+        return (decision, output) if output == text else (Decision.BLOCK, None)
     complete, found = scan(output, binary)
     if not complete or found:
         return Decision.BLOCK, None

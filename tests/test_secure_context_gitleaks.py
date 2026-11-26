@@ -62,6 +62,16 @@ class GitleaksProbeTests(unittest.TestCase):
             self.assertEqual(analyze_with_gitleaks("sensitive", "gitleaks"), (Decision.BLOCK, None))
             local.assert_not_called()
 
+    def test_unchanged_allow_uses_one_scan_but_unexpected_change_blocks(self):
+        with patch("experiments.secure_context_hybrid_poc.scan", return_value=(True, False)) as detector, \
+             patch("experiments.secure_context_hybrid_poc.analyze", return_value=(Decision.ALLOW, "clean")):
+            self.assertEqual(analyze_with_gitleaks("clean", "gitleaks"), (Decision.ALLOW, "clean"))
+            self.assertEqual(detector.call_count, 1)
+        with patch("experiments.secure_context_hybrid_poc.scan", return_value=(True, False)) as detector, \
+             patch("experiments.secure_context_hybrid_poc.analyze", return_value=(Decision.ALLOW, "changed")):
+            self.assertEqual(analyze_with_gitleaks("clean", "gitleaks"), (Decision.BLOCK, None))
+            self.assertEqual(detector.call_count, 1)
+
     def test_audit_only_exposes_fixed_metadata(self):
         with patch("experiments.secure_context_audit_probe.analyze_guarded", return_value=(Decision.TRANSFORM, "masked secret")):
             event = evaluate("synthetic sensitive input", "gitleaks")

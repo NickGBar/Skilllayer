@@ -1,7 +1,8 @@
 # Synthetic hybrid policy probe
 
-This experiment adds Gitleaks 8.30.1 as a mandatory check before and after the
-existing local policy probe. No customer data or production integration is in
+This experiment adds Gitleaks 8.30.1 before the existing local policy probe and
+rescans transformed output. An unchanged `ALLOW` reuses the original scan; an
+unexpected change with `ALLOW` blocks. No customer data or production integration is in
 scope. The local probe already uses Presidio's email/US-phone patterns and the
 SkillLayer Core regex scanner.
 
@@ -42,7 +43,11 @@ matched. End-to-end elapsed time was 10.98 seconds for 20 calls, including
 initial imports. The earlier policy-only run took 1.29 seconds, but these are
 single unpaired runs rather than a robust benchmark. Starting Gitleaks twice per
 allowed/transformed request is a measurable cost and must be evaluated in the
-customer's actual environment.
+customer's actual environment. In a six-pair alternating warm-run comparison,
+the original hybrid path medians were 572.1 ms (clean), 565.7 ms (email), and
+315.7 ms (secret). Skipping the duplicate scan only for byte-identical `ALLOW`
+gave 319.0 ms, 561.3 ms, and 290.9 ms respectively in another six-pair run.
+These are local exploratory timings, not production latency estimates.
 
 Five synthetic Python snippets containing email addresses matched their exact
 manually specified masked output and remained parseable. This establishes only
