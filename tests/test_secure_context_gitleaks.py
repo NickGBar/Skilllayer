@@ -29,13 +29,22 @@ class GitleaksProbeTests(unittest.TestCase):
                 self.assertEqual(scan("clean", "gitleaks"), (False, False))
 
     def test_malformed_report_and_mismatched_exit_fail_closed(self):
-        for data, code in (("invalid", 0), (json.dumps({}), 0), ("[]", 1), ("[{}]", 0), ("[{}]", 1)):
+        for data, code in (("invalid", 0), ("[" * 2000 + "]" * 2000, 0), (json.dumps({}), 0), ("[]", 1), ("[{}]", 0), ("[{}]", 1)):
             def fake_run(args, **kwargs):
                 Path(args[args.index("--report-path") + 1]).write_text(data)
                 return SimpleNamespace(returncode=code)
 
             with self.subTest(data=data, code=code), patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=fake_run):
                 self.assertEqual(scan("clean", "gitleaks"), (False, False))
+
+    def test_oversized_report_blocks(self):
+        def fake_run(args, **kwargs):
+            with Path(args[args.index("--report-path") + 1]).open("wb") as report:
+                report.truncate(16_777_217)
+            return SimpleNamespace(returncode=0)
+
+        with patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=fake_run):
+            self.assertEqual(scan("clean", "gitleaks"), (False, False))
 
     def test_input_is_stdin_and_untrusted_config_is_removed(self):
         observed = {}
@@ -67,6 +76,11 @@ class GitleaksProbeTests(unittest.TestCase):
              patch("experiments.secure_context_hybrid_poc.analyze") as local:
             self.assertEqual(analyze_with_gitleaks("sensitive", "gitleaks"), (Decision.BLOCK, None))
             local.assert_not_called()
+
+    def test_invalid_local_decision_blocks(self):
+        with patch("experiments.secure_context_hybrid_poc.scan", return_value=(True, False)), \
+             patch("experiments.secure_context_hybrid_poc.analyze", return_value=("ALLOW", "clean")):
+            self.assertEqual(analyze_with_gitleaks("clean", "gitleaks"), (Decision.BLOCK, None))
 
     def test_large_binary_and_invalid_unicode_block_before_subprocess(self):
         for value in ("x" * 1_048_577, "binary\x00content", "\ud800"):

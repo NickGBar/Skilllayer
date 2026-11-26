@@ -17,6 +17,8 @@ def analyze_with_gitleaks(text: str, binary: str, *, restricted: bool = False) -
     if not complete or found:
         return Decision.BLOCK, None
     decision, output = analyze(text, restricted=restricted)
+    if not isinstance(decision, Decision):
+        return Decision.BLOCK, None
     if decision not in (Decision.ALLOW, Decision.TRANSFORM):
         return decision, None
     if output is None:

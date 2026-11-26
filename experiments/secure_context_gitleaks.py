@@ -21,7 +21,8 @@ def scan(text: str, binary: str, *, timeout: float = 15.0) -> tuple[bool, bool]:
                 input=text, text=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 cwd=directory, env=env, timeout=timeout, check=False,
             )
-            if process.returncode not in (0, 1) or not report.is_file():
+            if (process.returncode not in (0, 1) or not report.is_file()
+                    or report.stat().st_size > 16_777_216):
                 return False, False
             data = json.loads(report.read_text(encoding="utf-8"))
             if (not isinstance(data, list) or any(not isinstance(item, dict)
@@ -30,5 +31,5 @@ def scan(text: str, binary: str, *, timeout: float = 15.0) -> tuple[bool, bool]:
             if (process.returncode == 0) != (len(data) == 0):
                 return False, False
             return True, bool(data)
-    except (OSError, TypeError, ValueError, subprocess.TimeoutExpired):
+    except (OSError, TypeError, ValueError, RecursionError, subprocess.TimeoutExpired):
         return False, False
