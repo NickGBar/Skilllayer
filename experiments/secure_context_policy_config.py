@@ -45,14 +45,34 @@ def parse_policy(raw: str) -> Policy:
     return Policy(version, MappingProxyType(dict(sources)), tuple(terms))
 
 
-def evaluate_with_policy(text: str, binary: str, source: str, raw_policy: str) -> tuple[Decision, str | None]:
+def evaluate_with_reason(text: str, binary: str, source: str, raw_policy: str) -> tuple[Decision, str | None, str]:
+    """Return a bounded reason code; never include input, source or policy text."""
     try:
         policy = parse_policy(raw_policy)
-        action = policy.sources.get(source, "block")
+        action = policy.sources.get(source)
     except (TypeError, ValueError):
-        return Decision.BLOCK, None
+        return Decision.BLOCK, None, "invalid_policy_or_source"
+    if action is None:
+        return Decision.BLOCK, None, "unknown_source"
     if action == "block":
-        return Decision.BLOCK, None
+        return Decision.BLOCK, None, "source_blocked"
     if action == "local_only":
-        return Decision.LOCAL_ONLY, None
-    return analyze_guarded(text, binary, source_authorized=True, restricted_terms=policy.restricted_terms)
+        return Decision.LOCAL_ONLY, None, "source_local_only"
+    try:
+        decision, output = analyze_guarded(text, binary, source_authorized=True, restricted_terms=policy.restricted_terms)
+    except Exception:
+        return Decision.BLOCK, None, "content_or_detector_blocked"
+    reasons = {Decision.BLOCK: "content_or_detector_blocked", Decision.LOCAL_ONLY: "local_only",
+               Decision.TRANSFORM: "content_transformed", Decision.ALLOW: "narrow_checks_clear"}
+    if not isinstance(decision, Decision):
+        return Decision.BLOCK, None, "content_or_detector_blocked"
+    if decision in (Decision.BLOCK, Decision.LOCAL_ONLY):
+        output = None
+    elif not isinstance(output, str) or (decision == Decision.ALLOW and output != text):
+        return Decision.BLOCK, None, "content_or_detector_blocked"
+    return decision, output, reasons[decision]
+
+
+def evaluate_with_policy(text: str, binary: str, source: str, raw_policy: str) -> tuple[Decision, str | None]:
+    decision, output, _ = evaluate_with_reason(text, binary, source, raw_policy)
+    return decision, output

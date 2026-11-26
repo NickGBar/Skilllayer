@@ -129,6 +129,12 @@ synthetic scope, and explicit `network_attempted=false` and
 or claim an unknown cause for a block. It is an in-memory demonstration, not
 a durable audit log or evidence of a production control.
 
+The separate policy-event probe uses bounded reason codes for invalid policy,
+unknown source, source block/local-only, transformation, or narrow checks
+clearing. A content/detector block is deliberately generic: the experiment
+does not yet provide reliable detector-specific explanations. Neither raw
+input nor the supplied source identifier is included in the event.
+
 `analyze_guarded` is a separate experiment entry point that blocks an unknown
 source by default and requires explicit `source_authorized=True` before an
 allow/transform path. A caller-provided boolean is only a simulation; a real

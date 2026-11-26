@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from experiments.secure_context_policy_config import Decision, evaluate_with_policy, parse_policy
+from experiments.secure_context_policy_config import Decision, evaluate_with_policy, evaluate_with_reason, parse_policy
 
 
 class PolicyConfigTests(unittest.TestCase):
@@ -22,6 +22,22 @@ class PolicyConfigTests(unittest.TestCase):
         with patch("experiments.secure_context_policy_config.analyze_guarded", return_value=(Decision.BLOCK, None)) as detector:
             self.assertEqual(evaluate_with_policy("input", "binary", "public", self.policy), (Decision.BLOCK, None))
             detector.assert_called_once_with("input", "binary", source_authorized=True, restricted_terms=("project-alpha",))
+
+    def test_reason_codes_are_bounded_and_do_not_echo_inputs(self):
+        for source, reason in (("unknown-private-source", "unknown_source"), ("secret", "source_blocked"),
+                               ("internal", "source_local_only")):
+            decision, output, code = evaluate_with_reason("private input", "binary", source, self.policy)
+            self.assertIsNone(output)
+            self.assertEqual(code, reason)
+            self.assertNotIn("private", code)
+
+    def test_detector_failure_and_malformed_output_have_honest_reason(self):
+        for result in (RuntimeError("private details"), ("unknown", "private"), (Decision.ALLOW, "changed")):
+            with self.subTest(result=result), patch("experiments.secure_context_policy_config.analyze_guarded",
+                                                   side_effect=result if isinstance(result, Exception) else None,
+                                                   return_value=result if not isinstance(result, Exception) else None):
+                self.assertEqual(evaluate_with_reason("private input", "binary", "public", self.policy),
+                                 (Decision.BLOCK, None, "content_or_detector_blocked"))
 
     def test_malformed_policies_block(self):
         bad = ["{", "{}", "[" * 2000 + "]" * 2000, '{"version":"v1","version":"v2","sources":{},"restricted_terms":[]}',

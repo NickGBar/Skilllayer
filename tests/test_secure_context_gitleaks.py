@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from experiments.secure_context_gitleaks import scan
 from experiments.secure_context_hybrid_poc import Decision, analyze_guarded, analyze_with_gitleaks
-from experiments.secure_context_audit_probe import evaluate
+from experiments.secure_context_audit_probe import evaluate, evaluate_policy_event
 from experiments.secure_context_hybrid_route_probe import route
 
 
@@ -92,6 +92,13 @@ class GitleaksProbeTests(unittest.TestCase):
         self.assertIs(event["safety_verified"], False)
         self.assertNotIn("sensitive", str(event))
         self.assertNotIn("masked secret", str(event))
+
+    def test_policy_audit_event_only_contains_bounded_reason(self):
+        with patch("experiments.secure_context_audit_probe.evaluate_with_reason", return_value=(Decision.BLOCK, None, "unknown_source")):
+            event = evaluate_policy_event("private input", "binary", "private source", "private policy")
+        self.assertEqual(event["reason"], "unknown_source")
+        self.assertNotIn("private", str(event))
+        self.assertIs(event["safety_verified"], False)
 
     def test_unknown_sources_block_before_detectors(self):
         with patch("experiments.secure_context_hybrid_poc.analyze_with_gitleaks") as inner:

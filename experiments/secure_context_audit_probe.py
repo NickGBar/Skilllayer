@@ -1,5 +1,6 @@
 """Bounded synthetic-only audit of a local policy decision."""
 from experiments.secure_context_hybrid_poc import analyze_guarded
+from experiments.secure_context_policy_config import evaluate_with_reason
 
 
 def evaluate(text: str, binary: str, *, source_authorized: bool = False, restricted: bool = False) -> dict[str, str | bool]:
@@ -13,6 +14,12 @@ def evaluate(text: str, binary: str, *, source_authorized: bool = False, restric
         "policy_version": "experimental-v1",
         "safety_verified": False,
     }
+
+
+def evaluate_policy_event(text: str, binary: str, source: str, raw_policy: str) -> dict[str, str | bool]:
+    decision, _, reason = evaluate_with_reason(text, binary, source, raw_policy)
+    return {"decision": decision.value, "reason": reason, "network_attempted": False,
+            "scope": "synthetic_local_probe", "safety_verified": False}
 
 
 if __name__ == "__main__":
