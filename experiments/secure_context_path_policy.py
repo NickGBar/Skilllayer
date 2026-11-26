@@ -53,6 +53,12 @@ def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: 
         return Decision.BLOCK, None
     if any(decide_path(path, allowed=allowed, forbidden=forbidden) != Decision.ALLOW for path, _ in files):
         return Decision.BLOCK, None
+    try:
+        if (sum(len(text) for _, text in files) > 1_048_576
+                or sum(len(text.encode("utf-8")) for _, text in files) > 1_048_576):
+            return Decision.BLOCK, None
+    except UnicodeError:
+        return Decision.BLOCK, None
     outputs = []
     transformed = False
     for path, text in files:
@@ -78,6 +84,9 @@ def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: 
         # This conservative concatenation is not a guarantee for all encodings
         # or for contexts assembled by another component.
         try:
+            if (sum(len(value) for value in outputs) > 1_048_576
+                    or sum(len(value.encode("utf-8")) for value in outputs) > 1_048_576):
+                return Decision.BLOCK, None
             from experiments.secure_context_policy_config import evaluate_with_policy
             combined = "".join(outputs)
             decision, output = evaluate_with_policy(combined, binary, source, raw_policy)

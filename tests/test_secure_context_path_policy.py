@@ -110,6 +110,22 @@ class PathPolicyTests(unittest.TestCase):
             self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                              allowed=("public",), forbidden=()), (Decision.BLOCK, None))
 
+    def test_oversized_bundle_blocks_before_combined_scan(self):
+        files = (("public/a.py", "x" * 600_000), ("public/b.py", "y" * 600_000))
+        with patch("experiments.secure_context_path_policy.evaluate_file") as each_file, \
+             patch("experiments.secure_context_policy_config.evaluate_with_policy") as combined:
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+            each_file.assert_not_called()
+            combined.assert_not_called()
+
+    def test_multibyte_bundle_size_is_counted_in_utf8_bytes(self):
+        files = (("public/a.py", "я" * 524_289),)
+        with patch("experiments.secure_context_path_policy.evaluate_file") as each_file:
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+            each_file.assert_not_called()
+
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
     def test_real_detector_blocks_secret_split_across_files(self):
         policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": []})

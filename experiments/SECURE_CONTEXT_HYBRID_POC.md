@@ -166,6 +166,8 @@ For an allowed multi-file bundle the probe also checks the concatenated output:
 synthetic tests cover a GitHub-shaped token and an email split across two
 individually clear fragments. This is a single conservative concatenation;
 it does not cover every encoding, separator, ordering or actual client payload.
+The probe applies its 1 MiB UTF-8 limit to the entire bundle before starting
+per-file detectors; the combined output is checked against the same limit.
 
 The JSON policy probe has a fixed schema and rejects duplicate keys, unknown
 fields, invalid actions and empty restricted terms. Unknown sources are
