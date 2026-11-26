@@ -156,6 +156,11 @@ forbidden prefixes priority. An allowed path still goes through source and
 content checks. This is lexical matching on a caller-supplied string: it does
 not resolve symlinks, authenticate the source or bind a path to file contents.
 It is not a filesystem security boundary and must not authorize real egress.
+The synthetic JSON policy can contain both `allowed_paths` and
+`forbidden_paths`; `evaluate_central_file` reads both source and path rules
+from that policy, and blocks when path rules are absent. The lower-level
+source-only evaluator does not enforce path restrictions. Neither entry point
+authenticates the path, source or policy.
 
 The synthetic bundle probe never returns partial output if a path or content
 check blocks. A one-file transformed bundle is supported; a multi-file bundle

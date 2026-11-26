@@ -3,7 +3,7 @@ import unittest
 import json
 import os
 from unittest.mock import patch
-from experiments.secure_context_path_policy import Decision, decide_path, evaluate_bundle, evaluate_file
+from experiments.secure_context_path_policy import Decision, decide_path, evaluate_bundle, evaluate_central_file, evaluate_file
 
 
 class PathPolicyTests(unittest.TestCase):
@@ -48,6 +48,21 @@ class PathPolicyTests(unittest.TestCase):
         with patch("experiments.secure_context_policy_config.evaluate_with_policy", side_effect=RuntimeError("sensitive error")):
             self.assertEqual(evaluate_file("sensitive", "binary", path="public/file.py", source="public",
                                            raw_policy="{}", allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
+    def test_central_policy_combines_source_and_path_rules(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": [],
+                             "allowed_paths": ["public"], "forbidden_paths": ["public/private"]})
+        with patch("experiments.secure_context_policy_config.evaluate_with_policy", return_value=(Decision.ALLOW, "ok")) as content:
+            self.assertEqual(evaluate_central_file("ok", "binary", path="public/file.py", source="public", raw_policy=policy),
+                             (Decision.ALLOW, "ok"))
+            self.assertEqual(evaluate_central_file("secret", "binary", path="public/private/file.py", source="public", raw_policy=policy),
+                             (Decision.BLOCK, None))
+            self.assertEqual(content.call_count, 1)
+
+    def test_central_policy_without_path_rules_blocks(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": []})
+        self.assertEqual(evaluate_central_file("ok", "binary", path="public/file.py", source="public", raw_policy=policy),
+                         (Decision.BLOCK, None))
 
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
     def test_allowed_file_with_secret_is_blocked_by_real_detectors(self):

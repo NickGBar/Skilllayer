@@ -14,6 +14,8 @@ class Policy:
     version: str
     sources: Mapping[str, str]
     restricted_terms: tuple[str, ...]
+    allowed_paths: tuple[str, ...] = ()
+    forbidden_paths: tuple[str, ...] = ()
 
 
 def parse_policy(raw: str) -> Policy:
@@ -30,7 +32,11 @@ def parse_policy(raw: str) -> Policy:
         data = json.loads(raw, object_pairs_hook=no_duplicate_keys)
     except (TypeError, ValueError, RecursionError) as exc:
         raise ValueError("invalid policy JSON") from exc
-    if not isinstance(data, dict) or set(data) != {"version", "sources", "restricted_terms"}:
+    required = {"version", "sources", "restricted_terms"}
+    path_fields = {"allowed_paths", "forbidden_paths"}
+    if (not isinstance(data, dict) or not required.issubset(data)
+            or not set(data).issubset(required | path_fields)
+            or (bool(path_fields & set(data)) and not path_fields.issubset(data))):
         raise ValueError("invalid policy fields")
     version, sources, terms = data["version"], data["sources"], data["restricted_terms"]
     if not isinstance(version, str) or not version.strip():
@@ -42,7 +48,12 @@ def parse_policy(raw: str) -> Policy:
         raise ValueError("invalid source entry")
     if not isinstance(terms, list) or any(not isinstance(t, str) or not t.strip() for t in terms):
         raise ValueError("invalid restricted terms")
-    return Policy(version, MappingProxyType(dict(sources)), tuple(terms))
+    allowed, forbidden = data.get("allowed_paths", []), data.get("forbidden_paths", [])
+    from experiments.secure_context_path_policy import _valid
+    if (not isinstance(allowed, list) or not isinstance(forbidden, list)
+            or not all(_valid(item) for item in [*allowed, *forbidden])):
+        raise ValueError("invalid path policy")
+    return Policy(version, MappingProxyType(dict(sources)), tuple(terms), tuple(allowed), tuple(forbidden))
 
 
 def evaluate_with_reason(text: str, binary: str, source: str, raw_policy: str) -> tuple[Decision, str | None, str]:

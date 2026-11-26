@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from experiments.secure_context_policy_config import Decision, evaluate_with_policy
+from experiments.secure_context_path_policy import evaluate_central_file
 
 
 def main():
@@ -30,6 +31,13 @@ def main():
         print(f"{label}: decision={decision.value}")
     print(f"fake_sends_total={len(sent)} real_network_calls=0")
     assert len(sent) == 2
+    for label, path, expected in (("allowed_path", "public/example.py", Decision.ALLOW),
+                                  ("forbidden_path", "public/customer/secret.py", Decision.BLOCK),
+                                  ("unknown_path", "private/example.py", Decision.BLOCK)):
+        decision, _ = evaluate_central_file("Describe a list", binary, path=path,
+                                             source="synthetic-public", raw_policy=policy)
+        assert decision == expected
+        print(f"{label}: decision={decision.value}")
 
 
 if __name__ == "__main__":

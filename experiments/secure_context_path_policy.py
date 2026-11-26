@@ -41,6 +41,18 @@ def evaluate_file(text: str, binary: str, *, path: str, source: str, raw_policy:
         return Decision.BLOCK, None
 
 
+def evaluate_central_file(text: str, binary: str, *, path: str, source: str,
+                          raw_policy: str) -> tuple[Decision, str | None]:
+    """Read source and lexical path rules from the same synthetic policy."""
+    try:
+        from experiments.secure_context_policy_config import parse_policy
+        policy = parse_policy(raw_policy)
+    except (TypeError, ValueError):
+        return Decision.BLOCK, None
+    return evaluate_file(text, binary, path=path, source=source, raw_policy=raw_policy,
+                         allowed=policy.allowed_paths, forbidden=policy.forbidden_paths)
+
+
 def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: str,
                     raw_policy: str, allowed: tuple[str, ...],
                     forbidden: tuple[str, ...]) -> tuple[Decision, tuple[str, ...] | None]:
