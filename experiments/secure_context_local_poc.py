@@ -25,7 +25,7 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
 
         registry = RecognizerRegistry(supported_languages=["en"])
         registry.add_recognizer(EmailRecognizer())
-        registry.add_recognizer(PhoneRecognizer(supported_regions=["US"]))
+        registry.add_recognizer(PhoneRecognizer(supported_regions=["US", "RU"]))
         analyzer = AnalyzerEngine(registry=registry, nlp_engine=NoOpNlpEngine(
             models=[{"lang_code": "en", "model_name": "no-op"}]), supported_languages=["en"])
 

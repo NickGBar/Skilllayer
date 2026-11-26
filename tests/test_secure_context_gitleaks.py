@@ -2,6 +2,9 @@
 import os
 import subprocess
 import json
+import contextlib
+import io
+import logging
 from pathlib import Path
 import unittest
 from types import SimpleNamespace
@@ -51,6 +54,7 @@ class GitleaksProbeTests(unittest.TestCase):
         self.assertNotIn("GITLEAKS_CONFIG_TOML", observed["env"])
         self.assertNotIn("TEST_SECRET", observed["env"])
         self.assertIn("--ignore-gitleaks-allow", observed["args"])
+        self.assertIn("--redact=100", observed["args"])
 
     def test_second_scan_failure_never_returns_input(self):
         with patch("experiments.secure_context_hybrid_poc.scan", side_effect=[(True, False), (False, False)]), \
@@ -135,6 +139,21 @@ class GitleaksProbeTests(unittest.TestCase):
         self.assertEqual(route("email irina.smirnova@example.com", binary, sent, source_authorized=True), Decision.TRANSFORM)
         self.assertEqual(len(sent), 1)
         self.assertNotIn("irina.smirnova@example.com", sent[0])
+
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_real_pipeline_does_not_print_or_log_synthetic_input(self):
+        binary = os.environ["SECURE_CONTEXT_GITLEAKS"]
+        value = "private.marker@example.com"
+        output = io.StringIO()
+        handler = logging.StreamHandler(output)
+        root = logging.getLogger()
+        root.addHandler(handler)
+        try:
+            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                self.assertEqual(analyze_with_gitleaks(value, binary)[0], Decision.TRANSFORM)
+        finally:
+            root.removeHandler(handler)
+        self.assertNotIn(value, output.getvalue())
 
 
 if __name__ == "__main__":

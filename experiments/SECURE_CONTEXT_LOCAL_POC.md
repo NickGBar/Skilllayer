@@ -1,7 +1,7 @@
 # Secure Context local policy probe
 
 This synthetic-only experiment connects the existing SkillLayer secret scanner,
-Presidio email and US-phone recognizers, and a small deterministic policy.
+Presidio email and US/RU-phone recognizers, and a small deterministic policy.
 It has no gateway, egress control, customer integration, or production guarantees.
 It does not detect confidential business logic and cannot establish that code
 is safe to share. Only the tested request path could ever be controlled.
@@ -24,7 +24,7 @@ PII blocks the operation. Restricted material returns `LOCAL_ONLY`; no external
 request is made. An `ALLOW` decision means only that these narrow checks did not
 find an issue. It is not proof of safety.
 
-Presidio uses pattern recognizers for email and US phone numbers only, with a
+Presidio uses pattern recognizers for email and US/RU phone numbers only, with a
 no-op NLP engine and local public suffix data; no names or business logic are
 detected. The secret scanner is regex-based and can miss secrets. The local
 policy is a demonstration, not an integration with SkillLayer Core. Policy

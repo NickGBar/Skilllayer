@@ -1,0 +1,9 @@
+{
+  "version": "synthetic-v1",
+  "sources": {
+    "synthetic-public": "allow",
+    "synthetic-internal": "local_only",
+    "synthetic-secret": "block"
+  },
+  "restricted_terms": ["project-alpha"]
+}

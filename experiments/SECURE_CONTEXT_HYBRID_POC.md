@@ -3,7 +3,7 @@
 This experiment adds Gitleaks 8.30.1 before the existing local policy probe and
 rescans transformed output. An unchanged `ALLOW` reuses the original scan; an
 unexpected change with `ALLOW` blocks. No customer data or production integration is in
-scope. The local probe already uses Presidio's email/US-phone patterns and the
+scope. The local probe uses Presidio's email/US/RU-phone patterns and the
 SkillLayer Core regex scanner.
 
 Gitleaks is passed input on stdin, not in command arguments. Its output is
@@ -36,6 +36,9 @@ SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_audit_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_hybrid_route_probe
+SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
+  python -m experiments.secure_context_policy_route_probe
+PYTHONPATH=.:src python -m experiments.secure_context_phone_probe
 PYTHONPATH=.:src python -m experiments.secure_context_rules_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_latency_probe
@@ -70,8 +73,14 @@ On ten further hand-selected privacy examples, the probe transformed two
 example. It allowed English and Russian names, a fictional `.test` email,
 postal address, date of birth, and an internal customer ID unchanged. The
 international phone observation does not establish coverage of Russian phone
-formats; the recognizer is explicitly configured with US default region.
+formats. That initial observation used a US-only region configuration; the
+current probe configures US and RU.
 These examples expose gaps; they are not a measured real-world recall rate.
+
+On seven phone-specific synthetic inputs, US+RU detected two national Russian
+formats that US-only missed; both configurations detected the same three
+international/US examples and returned no matches for the two clean controls.
+This is a narrow fixture comparison, not a production false-positive estimate.
 
 In six additional synthetic secret-shaped examples, Gitleaks missed a plain
 bearer header that the Core scanner blocked. A high-entropy fake value under
@@ -116,6 +125,13 @@ rejects malformed or empty rules. This covers only exact configured strings;
 it does not understand synonyms, encoded names, service architecture, or
 business logic. The list and authorization flag are caller-controlled and are
 not a trusted corporate policy in this experiment.
+
+The JSON policy probe has a fixed schema and rejects duplicate keys, unknown
+fields, invalid actions and empty restricted terms. Unknown sources are
+blocked. The synthetic policy example covers allow, local-only and block, and
+an allowed source must still pass detector checks. Policy text and source IDs
+are controlled by the caller; there is no integrity protection, authenticated
+source identity or enforcement of the policy outside this local experiment.
 
 An adversarial literal-rule probe uses a stubbed downstream detector so that
 only this rule is measured: exact and uppercase spellings blocked, while five

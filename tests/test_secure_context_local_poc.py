@@ -65,6 +65,12 @@ class LocalPolicyProbeTests(unittest.TestCase):
         self.assertNotIn("a.person@example.com", output)
         self.assertNotIn("b.person@example.com", output)
 
+    def test_russian_national_phone_is_masked(self):
+        original = "Телефон 8 (999) 123-45-67"
+        decision, output = analyze(original)
+        self.assertEqual(decision, Decision.TRANSFORM)
+        self.assertNotIn("8 (999) 123-45-67", output)
+
     def test_transformed_python_string_remains_parseable(self):
         import ast
         decision, output = analyze('contact = "a.person@example.com"')
