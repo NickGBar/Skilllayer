@@ -107,3 +107,15 @@ def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: 
         except Exception:
             return Decision.BLOCK, None
     return (Decision.TRANSFORM if transformed else Decision.ALLOW), tuple(outputs)
+
+
+def evaluate_central_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: str,
+                            raw_policy: str) -> tuple[Decision, tuple[str, ...] | None]:
+    """Apply one synthetic source/path policy to an atomic bundle."""
+    try:
+        from experiments.secure_context_policy_config import parse_policy
+        policy = parse_policy(raw_policy)
+    except (TypeError, ValueError):
+        return Decision.BLOCK, None
+    return evaluate_bundle(files, binary, source=source, raw_policy=raw_policy,
+                           allowed=policy.allowed_paths, forbidden=policy.forbidden_paths)

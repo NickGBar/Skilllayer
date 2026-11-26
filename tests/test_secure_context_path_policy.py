@@ -3,7 +3,7 @@ import unittest
 import json
 import os
 from unittest.mock import patch
-from experiments.secure_context_path_policy import Decision, decide_path, evaluate_bundle, evaluate_central_file, evaluate_file
+from experiments.secure_context_path_policy import Decision, decide_path, evaluate_bundle, evaluate_central_bundle, evaluate_central_file, evaluate_file
 
 
 class PathPolicyTests(unittest.TestCase):
@@ -62,6 +62,37 @@ class PathPolicyTests(unittest.TestCase):
     def test_central_policy_without_path_rules_blocks(self):
         policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": []})
         self.assertEqual(evaluate_central_file("ok", "binary", path="public/file.py", source="public", raw_policy=policy),
+                         (Decision.BLOCK, None))
+
+    def test_central_bundle_uses_path_policy_atomically(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": [],
+                             "allowed_paths": ["public"], "forbidden_paths": ["public/private"]})
+        files = (("public/ok.py", "clean"), ("public/private/x.py", "sensitive"))
+        with patch("experiments.secure_context_path_policy.evaluate_file") as content:
+            self.assertEqual(evaluate_central_bundle(files, "binary", source="public", raw_policy=policy),
+                             (Decision.BLOCK, None))
+            content.assert_not_called()
+        self.assertEqual(evaluate_central_bundle(files, "binary", source="public", raw_policy="bad"), (Decision.BLOCK, None))
+
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_real_central_bundle_blocks_split_secret(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": [],
+                             "allowed_paths": ["public"], "forbidden_paths": []})
+        files = (("public/a.py", "TOKEN=ghp_"), ("public/b.py", "A1b2C3d4" * 5))
+        self.assertEqual(evaluate_central_bundle(files, os.environ["SECURE_CONTEXT_GITLEAKS"], source="public", raw_policy=policy),
+                         (Decision.BLOCK, None))
+
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_real_central_file_policy_and_detectors(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": ["project-alpha"],
+                             "allowed_paths": ["public"], "forbidden_paths": ["public/private"]})
+        binary = os.environ["SECURE_CONTEXT_GITLEAKS"]
+        result = evaluate_central_file("contact a.person@example.com", binary, path="public/file.py", source="public", raw_policy=policy)
+        self.assertEqual(result[0], Decision.TRANSFORM)
+        self.assertNotIn("a.person@example.com", result[1])
+        self.assertEqual(evaluate_central_file("clean", binary, path="public/private/file.py", source="public", raw_policy=policy),
+                         (Decision.BLOCK, None))
+        self.assertEqual(evaluate_central_file("PROJECT-ALPHA", binary, path="public/file.py", source="public", raw_policy=policy),
                          (Decision.BLOCK, None))
 
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")

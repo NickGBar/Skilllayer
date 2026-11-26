@@ -158,7 +158,8 @@ not resolve symlinks, authenticate the source or bind a path to file contents.
 It is not a filesystem security boundary and must not authorize real egress.
 The synthetic JSON policy can contain both `allowed_paths` and
 `forbidden_paths`; `evaluate_central_file` reads both source and path rules
-from that policy, and blocks when path rules are absent. The lower-level
+from that policy, and blocks when path rules are absent. `evaluate_central_bundle`
+applies the same configured paths to an atomic bundle. The lower-level
 source-only evaluator does not enforce path restrictions. Neither entry point
 authenticates the path, source or policy.
 
