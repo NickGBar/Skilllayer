@@ -59,6 +59,8 @@ def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: 
             return decision, None
         if decision not in (Decision.ALLOW, Decision.TRANSFORM) or not isinstance(output, str):
             return Decision.BLOCK, None
+        if decision == Decision.ALLOW and output != text:
+            return Decision.BLOCK, None
         transformed |= decision == Decision.TRANSFORM
         outputs.append(output)
     # Aliases currently have per-file scope; they can collide across files.

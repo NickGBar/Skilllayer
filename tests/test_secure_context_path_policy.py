@@ -65,6 +65,11 @@ class PathPolicyTests(unittest.TestCase):
             self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                              allowed=("public",), forbidden=()), (Decision.BLOCK, None))
 
+    def test_bundle_blocks_allow_with_unexpected_modified_content(self):
+        with patch("experiments.secure_context_path_policy.evaluate_file", return_value=(Decision.ALLOW, "changed")):
+            self.assertEqual(evaluate_bundle((("public/a.py", "original"),), "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
     def test_multifile_transform_blocks_until_alias_scope_is_shared(self):
         files = (("public/a.py", "one"), ("public/b.py", "two"))
         with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.TRANSFORM, "masked"), (Decision.ALLOW, "two")]):
