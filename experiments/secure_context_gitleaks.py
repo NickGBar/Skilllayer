@@ -24,7 +24,8 @@ def scan(text: str, binary: str, *, timeout: float = 15.0) -> tuple[bool, bool]:
             if process.returncode not in (0, 1) or not report.is_file():
                 return False, False
             data = json.loads(report.read_text(encoding="utf-8"))
-            if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
+            if (not isinstance(data, list) or any(not isinstance(item, dict)
+                    or not isinstance(item.get("RuleID"), str) or not item["RuleID"].strip() for item in data)):
                 return False, False
             if (process.returncode == 0) != (len(data) == 0):
                 return False, False

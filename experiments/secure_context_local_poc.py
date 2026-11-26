@@ -36,6 +36,8 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
                 result = build_detect_secrets_artifacts(Path(directory))
                 if (result.get("success") is not True or result.get("scan_complete") is not True
                         or not isinstance(result.get("findings"), list)
+                        or type(result.get("findings_count")) is not int
+                        or result.get("findings_count") != len(result["findings"])
                         or result.get("scanned_files") != 1
                         or result.get("scanned_bytes") != len(value.encode("utf-8"))):
                     return False, False
