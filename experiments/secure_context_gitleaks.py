@@ -29,5 +29,5 @@ def scan(text: str, binary: str, *, timeout: float = 15.0) -> tuple[bool, bool]:
             if (process.returncode == 0) != (len(data) == 0):
                 return False, False
             return True, bool(data)
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+    except (OSError, TypeError, ValueError, subprocess.TimeoutExpired):
         return False, False

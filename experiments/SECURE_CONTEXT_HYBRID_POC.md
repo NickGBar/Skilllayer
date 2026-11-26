@@ -17,7 +17,9 @@ writes input into an OS temporary directory, so use synthetic data only.
 The probe requires the Core scanner to report one scanned file and the exact
 UTF-8 input byte count; oversized (>1 MiB) and binary inputs block in the
 observed scanner implementation. This is a completeness check for this probe,
-not proof that the scanner's patterns cover the contents.
+not proof that the scanner's patterns cover the contents. The hybrid entry
+point also blocks NUL bytes, invalid Unicode and inputs over 1 MiB before
+starting Gitleaks, so these inputs do not consume detector subprocess time.
 
 Use the pinned Presidio dependencies from `secure_context_day1` and the official
 Gitleaks 8.30.1 binary; verify its release checksum. For this run the Darwin ARM64
@@ -62,16 +64,18 @@ These are local exploratory timings, not production latency estimates.
 Five synthetic Python snippets containing email addresses matched their exact
 manually specified masked output and remained parseable. This establishes only
 the transformations in those examples, not general semantic preservation. An
-exploratory coverage probe passed a
-person's name, a company name, an internal hostname, business logic, and an
-`example.test` email through unchanged with `ALLOW`. An `example.com` email was
-masked. This confirms that `ALLOW` is only the result of narrow supported
+exploratory coverage probe passed a person's name, a company name, an internal
+hostname and business logic through unchanged with `ALLOW`. Initially it also
+passed an `example.test` email unchanged; after adding explicit local suffixes,
+that example is masked. This confirms that `ALLOW` is only the result of narrow supported
 patterns and is unsuitable as permission to send real data.
 
-On ten further hand-selected privacy examples, the probe transformed two
-`.com` email forms, one international Russian phone example and one US phone
-example. It allowed English and Russian names, a fictional `.test` email,
-postal address, date of birth, and an internal customer ID unchanged. The
+On ten further hand-selected privacy examples, the original configuration
+transformed two `.com` email forms, one international Russian phone example
+and one US phone example. It allowed English and Russian names, a fictional
+`.test` email, postal address, date of birth, and an internal customer ID
+unchanged. The updated configuration also masks the `.test` example; all other
+listed gaps remain. The
 international phone observation does not establish coverage of Russian phone
 formats. That initial observation used a US-only region configuration; the
 current probe configures US and RU.
@@ -81,6 +85,11 @@ On seven phone-specific synthetic inputs, US+RU detected two national Russian
 formats that US-only missed; both configurations detected the same three
 international/US examples and returned no matches for the two clean controls.
 This is a narrow fixture comparison, not a production false-positive estimate.
+
+The email recognizer uses a local public suffix snapshot plus the explicit
+synthetic suffixes `.test`, `.internal`, and `.local`; three corresponding
+synthetic addresses are now covered by targeted tests. Other private suffixes
+and false positives remain unmeasured.
 
 In six additional synthetic secret-shaped examples, Gitleaks missed a plain
 bearer header that the Core scanner blocked. A high-entropy fake value under

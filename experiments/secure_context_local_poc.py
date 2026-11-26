@@ -16,7 +16,8 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
     """
     try:
         import tldextract
-        tldextract.extract = tldextract.TLDExtract(suffix_list_urls=[], cache_dir=None)
+        tldextract.extract = tldextract.TLDExtract(suffix_list_urls=[], cache_dir=None,
+                                                  extra_suffixes=("test", "internal", "local"))
         from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
         from presidio_analyzer.nlp_engine import NoOpNlpEngine
         from presidio_analyzer.predefined_recognizers import EmailRecognizer, PhoneRecognizer

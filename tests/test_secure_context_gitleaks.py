@@ -19,6 +19,7 @@ from experiments.secure_context_hybrid_route_probe import route
 class GitleaksProbeTests(unittest.TestCase):
     def test_missing_binary_and_timeout_fail_closed(self):
         self.assertEqual(scan("clean", "/missing/gitleaks"), (False, False))
+        self.assertEqual(scan("clean", None), (False, False))
         with patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=subprocess.TimeoutExpired("gitleaks", 1)):
             self.assertEqual(scan("clean", "gitleaks"), (False, False))
 
@@ -66,6 +67,12 @@ class GitleaksProbeTests(unittest.TestCase):
              patch("experiments.secure_context_hybrid_poc.analyze") as local:
             self.assertEqual(analyze_with_gitleaks("sensitive", "gitleaks"), (Decision.BLOCK, None))
             local.assert_not_called()
+
+    def test_large_binary_and_invalid_unicode_block_before_subprocess(self):
+        for value in ("x" * 1_048_577, "binary\x00content", "\ud800"):
+            with self.subTest(kind=len(value)), patch("experiments.secure_context_hybrid_poc.scan") as detector:
+                self.assertEqual(analyze_with_gitleaks(value, "gitleaks"), (Decision.BLOCK, None))
+                detector.assert_not_called()
 
     def test_unchanged_allow_uses_one_scan_but_unexpected_change_blocks(self):
         with patch("experiments.secure_context_hybrid_poc.scan", return_value=(True, False)) as detector, \
@@ -154,6 +161,22 @@ class GitleaksProbeTests(unittest.TestCase):
         finally:
             root.removeHandler(handler)
         self.assertNotIn(value, output.getvalue())
+
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_real_gitleaks_report_redacts_synthetic_token(self):
+        binary = os.environ["SECURE_CONTEXT_GITLEAKS"]
+        token = "ghp_" + "A1b2C3d4" * 5
+        original_run = subprocess.run
+        observed = {}
+
+        def capture_report(args, **kwargs):
+            result = original_run(args, **kwargs)
+            observed["report"] = Path(args[args.index("--report-path") + 1]).read_text()
+            return result
+
+        with patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=capture_report):
+            self.assertEqual(scan("TOKEN=" + token, binary), (True, True))
+        self.assertNotIn(token, observed["report"])
 
 
 if __name__ == "__main__":

@@ -24,7 +24,7 @@ class PolicyConfigTests(unittest.TestCase):
             detector.assert_called_once_with("input", "binary", source_authorized=True, restricted_terms=("project-alpha",))
 
     def test_malformed_policies_block(self):
-        bad = ["{", "{}", '{"version":"v1","version":"v2","sources":{},"restricted_terms":[]}',
+        bad = ["{", "{}", "[" * 2000 + "]" * 2000, '{"version":"v1","version":"v2","sources":{},"restricted_terms":[]}',
                json.dumps({"version": "v1", "sources": {"public": "approve"}, "restricted_terms": []}),
                json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": [""]}),
                json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": [], "extra": True})]

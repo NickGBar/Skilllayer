@@ -28,7 +28,7 @@ def parse_policy(raw: str) -> Policy:
 
     try:
         data = json.loads(raw, object_pairs_hook=no_duplicate_keys)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise ValueError("invalid policy JSON") from exc
     if not isinstance(data, dict) or set(data) != {"version", "sources", "restricted_terms"}:
         raise ValueError("invalid policy fields")

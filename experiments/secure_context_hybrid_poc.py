@@ -6,6 +6,12 @@ from experiments.secure_context_local_poc import Decision, analyze
 
 
 def analyze_with_gitleaks(text: str, binary: str, *, restricted: bool = False) -> tuple[Decision, str | None]:
+    # Match the Core scanner's input limit before spawning any detector.
+    try:
+        if not isinstance(text, str) or "\x00" in text or len(text.encode("utf-8")) > 1_048_576:
+            return Decision.BLOCK, None
+    except UnicodeError:
+        return Decision.BLOCK, None
     complete, found = scan(text, binary)
     if not complete or found:
         return Decision.BLOCK, None

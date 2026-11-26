@@ -1,5 +1,6 @@
 """Synthetic regression cases for the local, non-production policy probe."""
 import builtins
+import itertools
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -40,6 +41,22 @@ class LocalPolicyProbeTests(unittest.TestCase):
         self.assertEqual(decide(detector_complete=True, secret=True, pii=True,
                                 restricted=True, transformable=True), Decision.BLOCK)
 
+    def test_policy_all_boolean_combinations(self):
+        for complete, secret, pii, restricted, transformable in itertools.product((False, True), repeat=5):
+            if not complete or secret:
+                expected = Decision.BLOCK
+            elif restricted:
+                expected = Decision.LOCAL_ONLY
+            elif pii and not transformable:
+                expected = Decision.BLOCK
+            elif pii:
+                expected = Decision.TRANSFORM
+            else:
+                expected = Decision.ALLOW
+            with self.subTest(complete=complete, secret=secret, pii=pii, restricted=restricted, transformable=transformable):
+                self.assertEqual(decide(detector_complete=complete, secret=secret, pii=pii,
+                                        restricted=restricted, transformable=transformable), expected)
+
     def test_incomplete_and_malformed_scanner_results_block(self):
         for result in ({"success": True, "scan_complete": False, "findings": []},
                        {"success": True, "scan_complete": True},
@@ -70,6 +87,13 @@ class LocalPolicyProbeTests(unittest.TestCase):
         decision, output = analyze(original)
         self.assertEqual(decision, Decision.TRANSFORM)
         self.assertNotIn("8 (999) 123-45-67", output)
+
+    def test_internal_and_test_email_domains_are_masked(self):
+        for email in ("dev@example.test", "dev@corp.internal", "dev@corp.local"):
+            with self.subTest(email=email):
+                decision, output = analyze("contact " + email)
+                self.assertEqual(decision, Decision.TRANSFORM)
+                self.assertNotIn(email, output)
 
     def test_transformed_python_string_remains_parseable(self):
         import ast
