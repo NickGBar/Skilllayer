@@ -47,6 +47,8 @@ SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_secret_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
+  python -m experiments.secure_context_size_probe
+SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m unittest discover -s tests -p 'test_secure_context*.py' -v
 ```
 
@@ -60,6 +62,13 @@ the original hybrid path medians were 572.1 ms (clean), 565.7 ms (email), and
 315.7 ms (secret). Skipping the duplicate scan only for byte-identical `ALLOW`
 gave 319.0 ms, 561.3 ms, and 290.9 ms respectively in another six-pair run.
 These are local exploratory timings, not production latency estimates.
+
+On a separate run, synthetic requests of 1 KiB, 16 KiB, 64 KiB and 256 KiB
+were allowed by the narrow scanner checks; a 1,048,577-byte input was blocked
+before scanning. Warm cases in this one run took roughly 0.27–0.41 seconds;
+the first took about 30 seconds while another Python process imported the same
+dependencies. These single observations are not a concurrency or latency
+benchmark, and the allowed inputs are not proven safe.
 
 Five synthetic Python snippets containing email addresses matched their exact
 manually specified masked output and remained parseable. This establishes only
@@ -134,6 +143,13 @@ rejects malformed or empty rules. This covers only exact configured strings;
 it does not understand synonyms, encoded names, service architecture, or
 business logic. The list and authorization flag are caller-controlled and are
 not a trusted corporate policy in this experiment.
+
+The path policy experiment accepts explicit relative POSIX path prefixes,
+blocks unknown paths and `..`, absolute paths and malformed rules, and gives
+forbidden prefixes priority. An allowed path still goes through source and
+content checks. This is lexical matching on a caller-supplied string: it does
+not resolve symlinks, authenticate the source or bind a path to file contents.
+It is not a filesystem security boundary and must not authorize real egress.
 
 The JSON policy probe has a fixed schema and rejects duplicate keys, unknown
 fields, invalid actions and empty restricted terms. Unknown sources are
