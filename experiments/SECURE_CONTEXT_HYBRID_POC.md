@@ -34,6 +34,9 @@ SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_privacy_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_audit_probe
+PYTHONPATH=.:src python -m experiments.secure_context_rules_probe
+SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
+  python -m experiments.secure_context_latency_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m unittest discover -s tests -p 'test_secure_context*.py' -v
 ```
@@ -98,3 +101,9 @@ rejects malformed or empty rules. This covers only exact configured strings;
 it does not understand synonyms, encoded names, service architecture, or
 business logic. The list and authorization flag are caller-controlled and are
 not a trusted corporate policy in this experiment.
+
+An adversarial literal-rule probe uses a stubbed downstream detector so that
+only this rule is measured: exact and uppercase spellings blocked, while five
+variants using punctuation, whitespace, percent encoding, a Unicode hyphen,
+or a zero-width character did not match. This deliberately demonstrates that
+literal matching does not conceal the service or establish confidentiality.
