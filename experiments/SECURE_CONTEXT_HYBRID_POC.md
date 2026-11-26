@@ -14,6 +14,9 @@ credentials or scanner configuration. It ignores inline
 unexpected exit status, or inconsistent report blocks. Successful scans do not
 prove that the input contains no sensitive information. The Core scanner still
 writes input into an OS temporary directory, so use synthetic data only.
+The binary path must be absolute; the experiment does not authenticate the
+caller-supplied executable or verify its checksum at runtime. CI separately
+downloads a pinned archive and checks its hash.
 The probe requires the Core scanner to report one scanned file and the exact
 UTF-8 input byte count; oversized (>1 MiB) and binary inputs block in the
 observed scanner implementation. This is a completeness check for this probe,

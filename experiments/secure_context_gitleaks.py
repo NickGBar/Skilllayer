@@ -10,6 +10,8 @@ from pathlib import Path
 
 def scan(text: str, binary: str, *, timeout: float = 15.0) -> tuple[bool, bool]:
     """Return (scan_complete, findings_present); all failures are incomplete."""
+    if not isinstance(binary, str) or not os.path.isabs(binary):
+        return False, False
     try:
         with tempfile.TemporaryDirectory(prefix="gitleaks-probe-") as directory:
             report = Path(directory, "report.json")

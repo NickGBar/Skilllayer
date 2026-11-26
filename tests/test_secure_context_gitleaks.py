@@ -20,13 +20,14 @@ class GitleaksProbeTests(unittest.TestCase):
     def test_missing_binary_and_timeout_fail_closed(self):
         self.assertEqual(scan("clean", "/missing/gitleaks"), (False, False))
         self.assertEqual(scan("clean", None), (False, False))
+        self.assertEqual(scan("clean", "gitleaks"), (False, False))
         with patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=subprocess.TimeoutExpired("gitleaks", 1)):
-            self.assertEqual(scan("clean", "gitleaks"), (False, False))
+            self.assertEqual(scan("clean", "/mock/gitleaks"), (False, False))
 
     def test_invalid_exit_and_missing_report_fail_closed(self):
         for code in (0, 1, 2):
             with self.subTest(code=code), patch("experiments.secure_context_gitleaks.subprocess.run", return_value=SimpleNamespace(returncode=code)):
-                self.assertEqual(scan("clean", "gitleaks"), (False, False))
+                self.assertEqual(scan("clean", "/mock/gitleaks"), (False, False))
 
     def test_malformed_report_and_mismatched_exit_fail_closed(self):
         for data, code in (("invalid", 0), ("[" * 2000 + "]" * 2000, 0), (json.dumps({}), 0), ("[]", 1), ("[{}]", 0), ("[{}]", 1)):
@@ -35,7 +36,7 @@ class GitleaksProbeTests(unittest.TestCase):
                 return SimpleNamespace(returncode=code)
 
             with self.subTest(data=data, code=code), patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=fake_run):
-                self.assertEqual(scan("clean", "gitleaks"), (False, False))
+                self.assertEqual(scan("clean", "/mock/gitleaks"), (False, False))
 
     def test_oversized_report_blocks(self):
         def fake_run(args, **kwargs):
@@ -44,7 +45,7 @@ class GitleaksProbeTests(unittest.TestCase):
             return SimpleNamespace(returncode=0)
 
         with patch("experiments.secure_context_gitleaks.subprocess.run", side_effect=fake_run):
-            self.assertEqual(scan("clean", "gitleaks"), (False, False))
+            self.assertEqual(scan("clean", "/mock/gitleaks"), (False, False))
 
     def test_input_is_stdin_and_untrusted_config_is_removed(self):
         observed = {}
