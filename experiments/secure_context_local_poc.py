@@ -16,16 +16,23 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
     """
     try:
         import tldextract
-        tldextract.extract = tldextract.TLDExtract(suffix_list_urls=[], cache_dir=None,
-                                                  extra_suffixes=("test", "internal", "local"))
         from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
         from presidio_analyzer.nlp_engine import NoOpNlpEngine
         from presidio_analyzer.predefined_recognizers import EmailRecognizer, PhoneRecognizer
         from presidio_anonymizer import AnonymizerEngine
         from presidio_anonymizer.entities import OperatorConfig
 
+        extractor = tldextract.TLDExtract(suffix_list_urls=[], cache_dir=None,
+                                          extra_suffixes=("test", "internal", "local"))
+
+        class LocalEmailRecognizer(EmailRecognizer):
+            # Preserve Presidio's patterns and validation semantics while using
+            # a per-instance local suffix configuration, without global mutation.
+            def validate_result(self, pattern_text: str) -> bool:
+                return extractor(pattern_text).fqdn != ""
+
         registry = RecognizerRegistry(supported_languages=["en"])
-        registry.add_recognizer(EmailRecognizer())
+        registry.add_recognizer(LocalEmailRecognizer())
         registry.add_recognizer(PhoneRecognizer(supported_regions=["US", "RU"]))
         analyzer = AnalyzerEngine(registry=registry, nlp_engine=NoOpNlpEngine(
             models=[{"lang_code": "en", "model_name": "no-op"}]), supported_languages=["en"])

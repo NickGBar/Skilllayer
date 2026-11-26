@@ -97,6 +97,12 @@ class LocalPolicyProbeTests(unittest.TestCase):
                 self.assertEqual(decision, Decision.TRANSFORM)
                 self.assertNotIn(email, output)
 
+    def test_presidio_configuration_does_not_modify_global_tldextract(self):
+        import tldextract
+        original = tldextract.extract
+        self.assertEqual(analyze("contact dev@example.test")[0], Decision.TRANSFORM)
+        self.assertIs(tldextract.extract, original)
+
     def test_transformed_python_string_remains_parseable(self):
         import ast
         decision, output = analyze('contact = "a.person@example.com"')

@@ -97,7 +97,9 @@ This is a narrow fixture comparison, not a production false-positive estimate.
 
 The email recognizer uses a local public suffix snapshot plus the explicit
 synthetic suffixes `.test`, `.internal`, and `.local`; three corresponding
-synthetic addresses are now covered by targeted tests. Other private suffixes
+synthetic addresses are now covered by targeted tests. A configured Presidio
+recognizer uses its own extractor without changing the library's global
+`tldextract.extract`. Other private suffixes
 and false positives remain unmeasured.
 
 In six additional synthetic secret-shaped examples, Gitleaks missed a plain

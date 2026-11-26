@@ -191,6 +191,14 @@ class PathPolicyTests(unittest.TestCase):
                                            raw_policy=policy, allowed=("public",), forbidden=())
         self.assertEqual((decision, output), (Decision.BLOCK, None))
 
+    @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
+    def test_combined_context_with_split_restricted_term_blocks(self):
+        policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": ["project-alpha"]})
+        files = (("public/a.py", "project-"), ("public/b.py", "alpha"))
+        decision, output = evaluate_bundle(files, os.environ["SECURE_CONTEXT_GITLEAKS"], source="public",
+                                           raw_policy=policy, allowed=("public",), forbidden=())
+        self.assertEqual((decision, output), (Decision.BLOCK, None))
+
 
 if __name__ == "__main__":
     unittest.main()
