@@ -40,6 +40,8 @@ PYTHONPATH=.:src python -m experiments.secure_context_rules_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_latency_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
+  python -m experiments.secure_context_secret_probe
+SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m unittest discover -s tests -p 'test_secure_context*.py' -v
 ```
 
@@ -70,6 +72,12 @@ postal address, date of birth, and an internal customer ID unchanged. The
 international phone observation does not establish coverage of Russian phone
 formats; the recognizer is explicitly configured with US default region.
 These examples expose gaps; they are not a measured real-world recall rate.
+
+In six additional synthetic secret-shaped examples, Gitleaks missed a plain
+bearer header that the Core scanner blocked. A high-entropy fake value under
+an unusual variable name passed both scanners. An encoded fake value was
+blocked in this particular configuration. These observations illustrate why a
+successful scan cannot classify arbitrary opaque strings as safe.
 
 The current demonstration uses a consistent placeholder for each exact matched
 value within a request, so two distinct values receive different placeholders.
