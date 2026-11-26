@@ -3,7 +3,7 @@ from time import perf_counter
 from experiments.secure_context_local_poc import analyze
 
 
-def main():
+def main(analyze_fn=analyze):
     cases = [
         ("clean_summary", "Summarize this public README.", False, "ALLOW"),
         ("clean_function", "def add(a, b): return a + b", False, "ALLOW"),
@@ -30,7 +30,7 @@ def main():
     start = perf_counter()
     for name, value, restricted, expected in cases:
         started = perf_counter()
-        actual, _ = analyze(value, restricted=restricted)
+        actual, _ = analyze_fn(value, restricted=restricted)
         matches += actual.value == expected
         print(f"{name}: expected={expected} actual={actual.value} duration_ms={(perf_counter()-started)*1000:.1f}")
     print(f"matches={matches}/{len(cases)} total_seconds={perf_counter()-start:.2f}")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tempfile
+from copy import copy
 from pathlib import Path
 
 from experiments.secure_context_policy_demo import Decision, decide
@@ -15,16 +16,24 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
     """
     try:
         import tldextract
-        tldextract.extract = tldextract.TLDExtract(suffix_list_urls=[], cache_dir=None)
         from presidio_analyzer import AnalyzerEngine, RecognizerRegistry
         from presidio_analyzer.nlp_engine import NoOpNlpEngine
         from presidio_analyzer.predefined_recognizers import EmailRecognizer, PhoneRecognizer
         from presidio_anonymizer import AnonymizerEngine
         from presidio_anonymizer.entities import OperatorConfig
 
+        extractor = tldextract.TLDExtract(suffix_list_urls=[], cache_dir=None,
+                                          extra_suffixes=("test", "internal", "local"))
+
+        class LocalEmailRecognizer(EmailRecognizer):
+            # Preserve Presidio's patterns and validation semantics while using
+            # a per-instance local suffix configuration, without global mutation.
+            def validate_result(self, pattern_text: str) -> bool:
+                return extractor(pattern_text).fqdn != ""
+
         registry = RecognizerRegistry(supported_languages=["en"])
-        registry.add_recognizer(EmailRecognizer())
-        registry.add_recognizer(PhoneRecognizer(supported_regions=["US"]))
+        registry.add_recognizer(LocalEmailRecognizer())
+        registry.add_recognizer(PhoneRecognizer(supported_regions=["US", "RU"]))
         analyzer = AnalyzerEngine(registry=registry, nlp_engine=NoOpNlpEngine(
             models=[{"lang_code": "en", "model_name": "no-op"}]), supported_languages=["en"])
 
@@ -33,7 +42,13 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
                 Path(directory, "input.txt").write_text(value, encoding="utf-8")
                 result = build_detect_secrets_artifacts(Path(directory))
                 if (result.get("success") is not True or result.get("scan_complete") is not True
-                        or not isinstance(result.get("findings"), list)):
+                        or not isinstance(result.get("findings"), list)
+                        or type(result.get("findings_count")) is not int
+                        or result.get("findings_count") != len(result["findings"])
+                        or result.get("status") != ("findings" if result["findings"] else "clear_for_supported_patterns")
+                        or result.get("clean") is not (not bool(result["findings"]))
+                        or result.get("scanned_files") != 1
+                        or result.get("scanned_bytes") != len(value.encode("utf-8"))):
                     return False, False
                 return True, bool(result["findings"])
 
@@ -45,8 +60,29 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
         if decision != Decision.TRANSFORM:
             return decision, text if decision == Decision.ALLOW else None
 
-        operators = {kind: OperatorConfig("replace", {"new_value": f"<{kind}>"}) for kind in entities}
-        transformed = AnonymizerEngine().anonymize(text=text, analyzer_results=findings, operators=operators).text
+        aliases: dict[tuple[str, str], str] = {}
+        counts: dict[str, int] = {}
+        operators = {}
+        rewritten = []
+        occupied: list[tuple[int, int]] = []
+        for finding in findings:
+            if not (0 <= finding.start < finding.end <= len(text)) or finding.entity_type not in entities:
+                return Decision.BLOCK, None
+            if any(finding.start < end and start < finding.end for start, end in occupied):
+                return Decision.BLOCK, None
+            occupied.append((finding.start, finding.end))
+            key = (finding.entity_type, text[finding.start:finding.end])
+            if key not in aliases:
+                counts[finding.entity_type] = counts.get(finding.entity_type, 0) + 1
+                aliases[key] = f"{finding.entity_type}_{counts[finding.entity_type]}"
+            label = aliases[key]
+            if f"<{label}>" in text:
+                return Decision.BLOCK, None
+            replacement = copy(finding)
+            replacement.entity_type = label
+            rewritten.append(replacement)
+            operators[label] = OperatorConfig("replace", {"new_value": f"<{label}>"})
+        transformed = AnonymizerEngine().anonymize(text=text, analyzer_results=rewritten, operators=operators).text
         complete, secret = secrets(transformed)
         remaining = analyzer.analyze(text=transformed, entities=entities, language="en")
         if not complete or secret or remaining:
