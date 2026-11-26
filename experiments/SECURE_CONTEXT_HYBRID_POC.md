@@ -44,8 +44,10 @@ single unpaired runs rather than a robust benchmark. Starting Gitleaks twice per
 allowed/transformed request is a measurable cost and must be evaluated in the
 customer's actual environment.
 
-Five synthetic Python snippets containing email addresses remained parseable
-after masking; this checks syntax only. An exploratory coverage probe passed a
+Five synthetic Python snippets containing email addresses matched their exact
+manually specified masked output and remained parseable. This establishes only
+the transformations in those examples, not general semantic preservation. An
+exploratory coverage probe passed a
 person's name, a company name, an internal hostname, business logic, and an
 `example.test` email through unchanged with `ALLOW`. An `example.com` email was
 masked. This confirms that `ALLOW` is only the result of narrow supported

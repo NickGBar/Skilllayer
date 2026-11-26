@@ -10,14 +10,14 @@ def main():
     if not os.path.isabs(binary):
         raise SystemExit("SECURE_CONTEXT_GITLEAKS must name an absolute binary path")
     cases = {
-        "string_literal": 'contact = "a.person@example.com"\n',
-        "function_default": 'def contact(email="a.person@example.com"):\n    return email\n',
-        "dictionary": 'recipients = {"primary": "a.person@example.com", "backup": "b.person@example.com"}\n',
-        "comment": '# Contact a.person@example.com\nvalue = 42\n',
-        "repeated": 'first = "a.person@example.com"\nsecond = "a.person@example.com"\n',
+        "string_literal": ('contact = "a.person@example.com"\n', 'contact = "<EMAIL_ADDRESS_1>"\n'),
+        "function_default": ('def contact(email="a.person@example.com"):\n    return email\n', 'def contact(email="<EMAIL_ADDRESS_1>"):\n    return email\n'),
+        "dictionary": ('recipients = {"primary": "a.person@example.com", "backup": "b.person@example.com"}\n', 'recipients = {"primary": "<EMAIL_ADDRESS_1>", "backup": "<EMAIL_ADDRESS_2>"}\n'),
+        "comment": ('# Contact a.person@example.com\nvalue = 42\n', '# Contact <EMAIL_ADDRESS_1>\nvalue = 42\n'),
+        "repeated": ('first = "a.person@example.com"\nsecond = "a.person@example.com"\n', 'first = "<EMAIL_ADDRESS_1>"\nsecond = "<EMAIL_ADDRESS_1>"\n'),
     }
     successes = 0
-    for name, original in cases.items():
+    for name, (original, expected) in cases.items():
         ast.parse(original)
         decision, output = analyze_with_gitleaks(original, binary)
         parseable = False
@@ -27,9 +27,9 @@ def main():
                 parseable = True
             except SyntaxError:
                 pass
-        ok = decision == Decision.TRANSFORM and parseable and "@example.com" not in output
+        ok = decision == Decision.TRANSFORM and parseable and output == expected
         successes += ok
-        print(f"{name}: decision={decision.value} parseable={parseable} expected_met={ok}")
+        print(f"{name}: decision={decision.value} parseable={parseable} exact_expected={ok}")
     print(f"syntactic_cases_passed={successes}/{len(cases)}")
     return int(successes != len(cases))
 
