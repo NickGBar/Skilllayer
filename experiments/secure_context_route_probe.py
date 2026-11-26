@@ -5,6 +5,8 @@ from experiments.secure_context_local_poc import Decision, analyze
 def route(text, restricted, send):
     decision, output = analyze(text, restricted=restricted)
     if decision in (Decision.ALLOW, Decision.TRANSFORM):
+        if not isinstance(output, str):
+            return Decision.BLOCK
         send(output)
     return decision
 

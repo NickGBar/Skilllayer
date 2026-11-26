@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tempfile
+from copy import copy
 from pathlib import Path
 
 from experiments.secure_context_policy_demo import Decision, decide
@@ -33,7 +34,9 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
                 Path(directory, "input.txt").write_text(value, encoding="utf-8")
                 result = build_detect_secrets_artifacts(Path(directory))
                 if (result.get("success") is not True or result.get("scan_complete") is not True
-                        or not isinstance(result.get("findings"), list)):
+                        or not isinstance(result.get("findings"), list)
+                        or result.get("scanned_files") != 1
+                        or result.get("scanned_bytes") != len(value.encode("utf-8"))):
                     return False, False
                 return True, bool(result["findings"])
 
@@ -45,8 +48,29 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
         if decision != Decision.TRANSFORM:
             return decision, text if decision == Decision.ALLOW else None
 
-        operators = {kind: OperatorConfig("replace", {"new_value": f"<{kind}>"}) for kind in entities}
-        transformed = AnonymizerEngine().anonymize(text=text, analyzer_results=findings, operators=operators).text
+        aliases: dict[tuple[str, str], str] = {}
+        counts: dict[str, int] = {}
+        operators = {}
+        rewritten = []
+        occupied: list[tuple[int, int]] = []
+        for finding in findings:
+            if not (0 <= finding.start < finding.end <= len(text)) or finding.entity_type not in entities:
+                return Decision.BLOCK, None
+            if any(finding.start < end and start < finding.end for start, end in occupied):
+                return Decision.BLOCK, None
+            occupied.append((finding.start, finding.end))
+            key = (finding.entity_type, text[finding.start:finding.end])
+            if key not in aliases:
+                counts[finding.entity_type] = counts.get(finding.entity_type, 0) + 1
+                aliases[key] = f"{finding.entity_type}_{counts[finding.entity_type]}"
+            label = aliases[key]
+            if f"<{label}>" in text:
+                return Decision.BLOCK, None
+            replacement = copy(finding)
+            replacement.entity_type = label
+            rewritten.append(replacement)
+            operators[label] = OperatorConfig("replace", {"new_value": f"<{label}>"})
+        transformed = AnonymizerEngine().anonymize(text=text, analyzer_results=rewritten, operators=operators).text
         complete, secret = secrets(transformed)
         remaining = analyzer.analyze(text=transformed, entities=entities, language="en")
         if not complete or secret or remaining:
