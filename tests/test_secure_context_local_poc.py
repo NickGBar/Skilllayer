@@ -63,7 +63,11 @@ class LocalPolicyProbeTests(unittest.TestCase):
                        {"success": True, "scan_complete": True, "findings": None},
                        {"success": True, "scan_complete": True, "findings": [], "scanned_files": 0, "scanned_bytes": 0},
                        {"success": True, "scan_complete": True, "findings": [], "findings_count": 1,
-                        "scanned_files": 1, "scanned_bytes": 5}):
+                        "scanned_files": 1, "scanned_bytes": 5},
+                       {"success": True, "scan_complete": True, "findings": [], "findings_count": 0,
+                        "status": "error", "clean": True, "scanned_files": 1, "scanned_bytes": 5},
+                       {"success": True, "scan_complete": True, "findings": [], "findings_count": 0,
+                        "status": "clear_for_supported_patterns", "clean": False, "scanned_files": 1, "scanned_bytes": 5}):
             with self.subTest(result=result), patch(
                 "experiments.secure_context_local_poc.build_detect_secrets_artifacts", return_value=result
             ):
@@ -71,6 +75,7 @@ class LocalPolicyProbeTests(unittest.TestCase):
 
     def test_second_scan_failure_blocks_transformed_output(self):
         responses = [{"success": True, "scan_complete": True, "findings": [], "findings_count": 0, "scanned_files": 1,
+                      "status": "clear_for_supported_patterns", "clean": True,
                       "scanned_bytes": len("Email irina.smirnova@example.com".encode("utf-8"))},
                      {"success": False, "scan_complete": False, "findings": []}]
         with patch("experiments.secure_context_local_poc.build_detect_secrets_artifacts", side_effect=responses):

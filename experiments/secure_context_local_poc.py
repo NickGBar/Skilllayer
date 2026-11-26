@@ -45,6 +45,8 @@ def analyze(text: str, *, restricted: bool = False) -> tuple[Decision, str | Non
                         or not isinstance(result.get("findings"), list)
                         or type(result.get("findings_count")) is not int
                         or result.get("findings_count") != len(result["findings"])
+                        or result.get("status") != ("findings" if result["findings"] else "clear_for_supported_patterns")
+                        or result.get("clean") is not (not bool(result["findings"]))
                         or result.get("scanned_files") != 1
                         or result.get("scanned_bytes") != len(value.encode("utf-8"))):
                     return False, False
