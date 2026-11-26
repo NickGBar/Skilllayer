@@ -122,6 +122,12 @@ class PathPolicyTests(unittest.TestCase):
             self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                              allowed=("public",), forbidden=()), (Decision.BLOCK, None))
 
+    def test_local_only_bundle_discards_earlier_output(self):
+        files = (("public/a.py", "one"), ("public/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.LOCAL_ONLY, None)]):
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.LOCAL_ONLY, None))
+
     def test_bundle_blocks_allow_with_unexpected_modified_content(self):
         with patch("experiments.secure_context_path_policy.evaluate_file", return_value=(Decision.ALLOW, "changed")):
             self.assertEqual(evaluate_bundle((("public/a.py", "original"),), "binary", source="public", raw_policy="{}",
@@ -144,7 +150,8 @@ class PathPolicyTests(unittest.TestCase):
                                              allowed=("public",), forbidden=()), (Decision.TRANSFORM, ("masked",)))
 
     def test_bundle_duplicate_or_malformed_input_blocks(self):
-        for files in ((), (("public/a.py", "one"), ("public/a.py", "two")), (("public/a.py",),), (("public/a.py", 5),)):
+        too_many = tuple((f"public/{i}.py", "clean") for i in range(21))
+        for files in ((), (("public/a.py", "one"), ("public/a.py", "two")), (("public/a.py",),), (("public/a.py", 5),), too_many):
             with self.subTest(files=files):
                 self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                                  allowed=("public",), forbidden=()), (Decision.BLOCK, None))
@@ -171,6 +178,13 @@ class PathPolicyTests(unittest.TestCase):
             self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                              allowed=("public",), forbidden=()), (Decision.BLOCK, None))
             each_file.assert_not_called()
+
+    def test_exact_bundle_byte_limit_is_accepted_for_checking(self):
+        text = "x" * 1_048_576
+        with patch("experiments.secure_context_path_policy.evaluate_file", return_value=(Decision.ALLOW, text)) as detector:
+            self.assertEqual(evaluate_bundle((("public/a.py", text),), "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.ALLOW, (text,)))
+            detector.assert_called_once()
 
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
     def test_real_detector_blocks_secret_split_across_files(self):

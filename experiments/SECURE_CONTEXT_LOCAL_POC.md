@@ -40,5 +40,8 @@ The fixed 20-case matrix matched 20 expected decisions; one local run took
 sample. A separate fake-transport probe sent the clean and transformed values
 to an in-memory list and made zero simulated sends for blocked/local-only cases.
 There is no real transport or interception in that experiment.
-Full suite, real customer data, Gitleaks integration, network interception,
-latency, and real-world false-positive/false-negative rates were not evaluated.
+This local probe does not invoke Gitleaks. A separate synthetic hybrid probe,
+including exploratory timings and a full-suite result for an earlier revision,
+is described in [SECURE_CONTEXT_HYBRID_POC.md](SECURE_CONTEXT_HYBRID_POC.md).
+Real customer data, network interception, and real-world false-positive and
+false-negative rates were not evaluated.
