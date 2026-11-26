@@ -10,6 +10,7 @@ from unittest.mock import patch
 from experiments.secure_context_gitleaks import scan
 from experiments.secure_context_hybrid_poc import Decision, analyze_guarded, analyze_with_gitleaks
 from experiments.secure_context_audit_probe import evaluate
+from experiments.secure_context_hybrid_route_probe import route
 
 
 class GitleaksProbeTests(unittest.TestCase):
@@ -113,6 +114,13 @@ class GitleaksProbeTests(unittest.TestCase):
                              (Decision.ALLOW, "public example"))
             inner.assert_called_once()
 
+    def test_fake_hybrid_route_blocks_unknown_and_malformed_output(self):
+        sent = []
+        self.assertEqual(route("clean", "/unused", sent), Decision.BLOCK)
+        with patch("experiments.secure_context_hybrid_route_probe.analyze_guarded", return_value=(Decision.ALLOW, None)):
+            self.assertEqual(route("clean", "/unused", sent, source_authorized=True), Decision.BLOCK)
+        self.assertEqual(sent, [])
+
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
     def test_real_gitleaks_and_presidio(self):
         binary = os.environ["SECURE_CONTEXT_GITLEAKS"]
@@ -122,6 +130,11 @@ class GitleaksProbeTests(unittest.TestCase):
         decision, output = analyze_with_gitleaks("email irina.smirnova@example.com", binary)
         self.assertEqual(decision, Decision.TRANSFORM)
         self.assertNotIn("irina.smirnova@example.com", output)
+        sent = []
+        self.assertEqual(route("TOKEN=ghp_" + "A1b2C3d4" * 5, binary, sent, source_authorized=True), Decision.BLOCK)
+        self.assertEqual(route("email irina.smirnova@example.com", binary, sent, source_authorized=True), Decision.TRANSFORM)
+        self.assertEqual(len(sent), 1)
+        self.assertNotIn("irina.smirnova@example.com", sent[0])
 
 
 if __name__ == "__main__":

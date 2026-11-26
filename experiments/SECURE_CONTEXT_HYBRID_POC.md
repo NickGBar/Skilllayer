@@ -34,6 +34,8 @@ SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_privacy_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_audit_probe
+SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
+  python -m experiments.secure_context_hybrid_route_probe
 PYTHONPATH=.:src python -m experiments.secure_context_rules_probe
 SECURE_CONTEXT_GITLEAKS=/absolute/path/to/gitleaks PYTHONPATH=.:src \
   python -m experiments.secure_context_latency_probe
@@ -80,6 +82,11 @@ Business logic and implementation-sensitive code can remain exposed. No network
 egress is intercepted. A fake in-memory transport does not verify an agent or
 gateway integration. Customer-specific rules, actual gateway, acceptance
 criteria, and real-world false negatives remain unknown.
+
+The synthetic hybrid route probe forwards clean and masked samples into an
+in-memory list, and forwards nothing for unknown sources, named restricted
+terms, restricted inputs, or detected secrets. It makes zero network calls and
+does not implement or validate interception of a real AI client.
 
 The audit probe emits a fixed metadata-only event: decision, policy version,
 synthetic scope, and explicit `network_attempted=false` and
