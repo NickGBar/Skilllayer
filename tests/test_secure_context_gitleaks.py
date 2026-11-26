@@ -82,6 +82,27 @@ class GitleaksProbeTests(unittest.TestCase):
             self.assertEqual(analyze_guarded("clean", "gitleaks", source_authorized=True), (Decision.BLOCK, None))
             inner.assert_called_once_with("clean", "gitleaks")
 
+    def test_restricted_terms_block_without_exposing_match(self):
+        with patch("experiments.secure_context_hybrid_poc.analyze_with_gitleaks") as inner:
+            self.assertEqual(analyze_guarded("Internal PROJECT-ALPHA service", "gitleaks",
+                                             source_authorized=True, restricted_terms=("project-alpha",)),
+                             (Decision.BLOCK, None))
+            inner.assert_not_called()
+
+    def test_invalid_term_policy_blocks(self):
+        for terms in (("",), ("   ",), (None,), ["valid"]):
+            with self.subTest(terms=terms), patch("experiments.secure_context_hybrid_poc.analyze_with_gitleaks") as inner:
+                self.assertEqual(analyze_guarded("clean", "gitleaks", source_authorized=True,
+                                                 restricted_terms=terms), (Decision.BLOCK, None))
+                inner.assert_not_called()
+
+    def test_nonmatching_term_still_runs_detectors(self):
+        with patch("experiments.secure_context_hybrid_poc.analyze_with_gitleaks", return_value=(Decision.ALLOW, "public example")) as inner:
+            self.assertEqual(analyze_guarded("public example", "gitleaks", source_authorized=True,
+                                             restricted_terms=("private-service",)),
+                             (Decision.ALLOW, "public example"))
+            inner.assert_called_once()
+
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
     def test_real_gitleaks_and_presidio(self):
         binary = os.environ["SECURE_CONTEXT_GITLEAKS"]

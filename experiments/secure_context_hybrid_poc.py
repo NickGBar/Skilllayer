@@ -21,10 +21,17 @@ def analyze_with_gitleaks(text: str, binary: str, *, restricted: bool = False) -
 
 
 def analyze_guarded(text: str, binary: str, *, source_authorized: bool = False,
-                    restricted: bool = False) -> tuple[Decision, str | None]:
-    """Require explicit source authorization before any possible allow decision."""
+                    restricted: bool = False, restricted_terms: tuple[str, ...] = ()) -> tuple[Decision, str | None]:
+    """Apply explicit synthetic policy before any possible allow decision."""
     if restricted:
         return Decision.LOCAL_ONLY, None
     if source_authorized is not True:
+        return Decision.BLOCK, None
+    if not isinstance(text, str):
+        return Decision.BLOCK, None
+    if not isinstance(restricted_terms, tuple) or any(not isinstance(term, str) or not term.strip() for term in restricted_terms):
+        return Decision.BLOCK, None
+    folded = text.casefold()
+    if any(term.casefold() in folded for term in restricted_terms):
         return Decision.BLOCK, None
     return analyze_with_gitleaks(text, binary)

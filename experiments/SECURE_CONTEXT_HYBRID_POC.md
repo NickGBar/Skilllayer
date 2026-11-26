@@ -86,3 +86,10 @@ integration needs a trustworthy, independently managed source policy and an
 enforced route. The lower-level `analyze_with_gitleaks` and matrix intentionally
 measure detector behavior without that source policy and must not be used as an
 authorization decision.
+
+The guarded experiment also accepts an explicit tuple of restricted strings:
+it blocks exact case-insensitive substrings before detector execution, and
+rejects malformed or empty rules. This covers only exact configured strings;
+it does not understand synonyms, encoded names, service architecture, or
+business logic. The list and authorization flag are caller-controlled and are
+not a trusted corporate policy in this experiment.
