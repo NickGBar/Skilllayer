@@ -61,6 +61,7 @@ from .token_savings_benchmark import run_token_savings_benchmark
 from .workflow_repair import run_workflow_repair_report
 from .version import product_version
 from . import gate as gate_core
+from . import gate_cases
 from . import verify as verify_core
 from . import verify_hook
 from .runner.core import (
@@ -82,7 +83,7 @@ COMMANDS = {
     "policy",
     "mcp-config",
     "mcp-config-check",
-    "safe-change", "release-readiness", "resume-work", "verify", "gate",
+    "safe-change", "release-readiness", "resume-work", "verify", "gate", "cases",
     "stats", "analytics", "benchmark", "analyze-failures", "repair-workflows-report",
     "optimize-cost-report", "generalization-report", "packaging-audit", "open-source-audit",
     "usage-report", "cost-report", "ab-benchmark", "validate-live-telemetry", "demand-report",
@@ -109,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     started = time.perf_counter()
     command_name = str(getattr(args, "command", None) or argv[0] or "unknown")
-    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify", "gate"}
+    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify", "gate", "cases"}
     if automatic_telemetry_enabled() and command_name not in telemetry_exempt:
         telemetry_paths = (
             automatic_telemetry_paths()
@@ -263,6 +264,26 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--lang", choices=list(gate_core.LANGUAGES), default=None, help="Language of the console report. Defaults to $SKILLLAYER_LANG, then en. Receipts, JSON and the event log keep English keys.")
     gate_parser.add_argument("--json", action="store_true", help="Print strict JSON only.")
     gate_parser.set_defaults(handler=handle_gate)
+
+    cases_parser = subparsers.add_parser(
+        "cases",
+        help="Case log for the change gate: list the checks that stopped a change set, label whether each stop was right, and summarize a pilot. Reads the gate's receipts; never edits them.",
+    )
+    cases_sub = cases_parser.add_subparsers(dest="cases_command")
+    cases_list = cases_sub.add_parser("list", help="One line per failed or unverified check, with its label.")
+    cases_label = cases_sub.add_parser("label", help="Record whether the gate was right to stop a change set for this check.")
+    cases_label.add_argument("case_id", help="Case id from `skilllayer cases list`, e.g. c-1a2b3c4d5e.")
+    cases_label.add_argument("--verdict", required=True, choices=list(gate_cases.VERDICTS), help="correct: the stop was justified; false_positive: it was not; unsure.")
+    cases_label.add_argument("--fixed", choices=["yes", "no"], default=None, help="Whether the change was fixed because of this case.")
+    cases_label.add_argument("--minutes", type=int, default=None, help="Minutes a person spent on this case.")
+    cases_label.add_argument("--note", default=None, help=f"One line, at most {gate_cases.MAX_NOTE_CHARS} characters. Stays local.")
+    cases_summary = cases_sub.add_parser("summary", help="The pilot's numbers: would-be stops, reasons, false positives, minutes.")
+    for sub, handler in ((cases_list, handle_cases_list), (cases_label, handle_cases_label), (cases_summary, handle_cases_summary)):
+        sub.add_argument("--repo", default=None, help="Repository whose default receipt directory to read. Defaults to the current working directory.")
+        sub.add_argument("--receipt-dir", default=None, help="Directory with gate receipts, as passed to `skilllayer gate --receipt-dir`.")
+        sub.add_argument("--lang", choices=list(gate_core.LANGUAGES), default=None, help="Language of the console output. Defaults to $SKILLLAYER_LANG, then en.")
+        sub.add_argument("--json", action="store_true", help="Print strict JSON only.")
+        sub.set_defaults(handler=handler)
 
     release_readiness_parser = subparsers.add_parser("release-readiness", help="Assess whether a repository is ready for careful external release.")
     release_readiness_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
@@ -723,6 +744,76 @@ def handle_gate(args: argparse.Namespace) -> int:
     if not receipt["blocked"]:
         return 0
     return 2 if receipt["verdict"] == gate_core.GATE_BLOCKED else 3
+
+
+def _cases_dir(args: argparse.Namespace) -> Path | None:
+    if args.receipt_dir:
+        return Path(args.receipt_dir).expanduser().resolve()
+    root = verify_core.find_git_root(_resolve_repo_arg(args.repo))
+    return gate_core.default_receipt_dir(root) if root is not None else None
+
+
+def _cases_load(args: argparse.Namespace):
+    """Receipts and labels for a cases command, or None after printing why not."""
+    directory = _cases_dir(args)
+    if directory is None:
+        print("skilllayer cases: not inside a git repository; pass --receipt-dir.", file=sys.stderr)
+        return None
+    if not directory.is_dir():
+        print(f"skilllayer cases: no receipt directory at {directory}.", file=sys.stderr)
+        return None
+    key, _ = gate_core.take_receipt_key_from_env()
+    receipts, rejected = gate_cases.load_receipts(directory, key=key)
+    labels, bad = gate_cases.read_labels(directory)
+    return directory, receipts, rejected, labels, bad
+
+
+def handle_cases_list(args: argparse.Namespace) -> int:
+    loaded = _cases_load(args)
+    if loaded is None:
+        return 1
+    _, receipts, _, labels, _ = loaded
+    cases = [case for receipt in receipts for case in gate_cases.cases_of(receipt)]
+    if args.json:
+        print(json.dumps([{**case, "label": labels.get(case["id"])} for case in cases], indent=2, ensure_ascii=False))
+    else:
+        print(gate_cases.render_cases(cases, labels, lang=gate_core.resolve_lang(args.lang)))
+    return 0
+
+
+def handle_cases_label(args: argparse.Namespace) -> int:
+    loaded = _cases_load(args)
+    if loaded is None:
+        return 1
+    directory, receipts, _, _, _ = loaded
+    case = next((c for r in receipts for c in gate_cases.cases_of(r) if c["id"] == args.case_id), None)
+    if case is None:
+        print(f"skilllayer cases: no case {args.case_id!r} in {directory}; see `skilllayer cases list`.", file=sys.stderr)
+        return 1
+    try:
+        label = gate_cases.add_label(
+            directory, case, verdict=args.verdict,
+            fixed=None if args.fixed is None else args.fixed == "yes",
+            minutes=args.minutes, note=args.note,
+        )
+    except (ValueError, OSError) as exc:
+        print(f"skilllayer cases: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(label, indent=2, ensure_ascii=False) if args.json else f"{case['id']}: {label['verdict']}")
+    return 0
+
+
+def handle_cases_summary(args: argparse.Namespace) -> int:
+    loaded = _cases_load(args)
+    if loaded is None:
+        return 1
+    _, receipts, rejected, labels, bad = loaded
+    summary = gate_cases.summarize(receipts, labels, rejected=len(rejected), bad_labels=bad)
+    if args.json:
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+    else:
+        print(gate_cases.render_summary(summary, lang=gate_core.resolve_lang(args.lang)))
+    return 0
 
 
 def handle_release_readiness(args: argparse.Namespace) -> int:
