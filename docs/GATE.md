@@ -144,6 +144,28 @@ skilllayer gate --verify-receipt gate-receipts/<file>.json   # 0 valid, 2 invali
 
 Receipts never contain a matched secret, a remote URL's credentials or e-mail addresses.
 
+## Case log
+
+A pilot has to say how often the gate was right. Every check that did not pass in a receipt is a
+case; a person records whether stopping the change for that reason was justified.
+
+```bash
+skilllayer cases list --receipt-dir gate-receipts            # c-1a2b3c4d5e  2026-11-30  …  tests:failed  [not labelled]
+skilllayer cases label c-1a2b3c4d5e --verdict correct --fixed yes --minutes 7 --receipt-dir gate-receipts
+skilllayer cases summary --receipt-dir gate-receipts --lang ru
+```
+
+`--verdict` is `correct`, `false_positive` or `unsure`. `summary` reports the runs, how many the
+gate would have stopped and how many it actually blocked, the reasons, the labels and the share of
+false positives among judged cases, the minutes people recorded, and the gate's own run time.
+
+- Receipts are read, never changed. Only receipts whose digest checks out are counted (and whose
+  HMAC checks out, when `SKILLLAYER_RECEIPT_KEY` is set); the rest are reported as ignored.
+- Labels are appended to `labels.jsonl` in the receipt directory, one line per decision; the
+  latest line for a case wins. A case id is stable for its receipt and check.
+- Notes stay local: one line, at most 300 characters. Nothing in the case log leaves the machine.
+- Without `--receipt-dir`, the command reads the repository's default receipt directory.
+
 ## AI-assisted commits
 
 A commit counts as AI-assisted when a trailer says so: `Co-Authored-By:` naming a known agent

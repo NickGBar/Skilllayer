@@ -4,6 +4,11 @@
 
 ### Added
 
+- `skilllayer cases`: a case log for pilots of the gate. `list` shows every failed or unverified
+  check from the gate's receipts with a stable id; `label` records whether stopping the change was
+  correct, a false positive or unsure, whether it was fixed and the minutes spent; `summary` gives
+  the pilot's numbers — would-be stops, actual blocks, reasons, false-positive share, minutes.
+  Receipts are never edited; labels are appended to `labels.jsonl` next to them and stay local.
 - `skilllayer gate`: an agent-agnostic change gate for CI and git pre-push hooks. A change set is
   accepted only when its tests and the caller's required checks were observed passing on the exact
   commits that would land, no protected path changed (policy read from the base commit), and no
