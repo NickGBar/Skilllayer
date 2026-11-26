@@ -34,8 +34,11 @@ def evaluate_file(text: str, binary: str, *, path: str, source: str, raw_policy:
     """Compose lexical path and content policy for a synthetic caller."""
     if decide_path(path, allowed=allowed, forbidden=forbidden) != Decision.ALLOW:
         return Decision.BLOCK, None
-    from experiments.secure_context_policy_config import evaluate_with_policy
-    return evaluate_with_policy(text, binary, source, raw_policy)
+    try:
+        from experiments.secure_context_policy_config import evaluate_with_policy
+        return evaluate_with_policy(text, binary, source, raw_policy)
+    except Exception:
+        return Decision.BLOCK, None
 
 
 def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: str,
@@ -53,8 +56,12 @@ def evaluate_bundle(files: tuple[tuple[str, str], ...], binary: str, *, source: 
     outputs = []
     transformed = False
     for path, text in files:
-        decision, output = evaluate_file(text, binary, path=path, source=source, raw_policy=raw_policy,
-                                         allowed=allowed, forbidden=forbidden)
+        try:
+            decision, output = evaluate_file(text, binary, path=path, source=source, raw_policy=raw_policy,
+                                             allowed=allowed, forbidden=forbidden)
+        except Exception:
+            # Do not return partial output or disclose exception text.
+            return Decision.BLOCK, None
         if decision in (Decision.BLOCK, Decision.LOCAL_ONLY):
             return decision, None
         if decision not in (Decision.ALLOW, Decision.TRANSFORM) or not isinstance(output, str):

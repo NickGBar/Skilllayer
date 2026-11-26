@@ -44,6 +44,11 @@ class PathPolicyTests(unittest.TestCase):
                                            raw_policy="{}", allowed=("public",), forbidden=()), (Decision.BLOCK, None))
             content.assert_called_once()
 
+    def test_content_policy_exception_blocks(self):
+        with patch("experiments.secure_context_policy_config.evaluate_with_policy", side_effect=RuntimeError("sensitive error")):
+            self.assertEqual(evaluate_file("sensitive", "binary", path="public/file.py", source="public",
+                                           raw_policy="{}", allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
     @unittest.skipUnless(os.environ.get("SECURE_CONTEXT_GITLEAKS"), "optional Gitleaks binary not supplied")
     def test_allowed_file_with_secret_is_blocked_by_real_detectors(self):
         policy = json.dumps({"version": "v1", "sources": {"public": "allow"}, "restricted_terms": []})
@@ -62,6 +67,12 @@ class PathPolicyTests(unittest.TestCase):
     def test_bundle_late_failure_discards_earlier_output(self):
         files = (("public/a.py", "one"), ("public/b.py", "two"))
         with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), (Decision.BLOCK, None)]):
+            self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
+                                             allowed=("public",), forbidden=()), (Decision.BLOCK, None))
+
+    def test_bundle_exception_discards_earlier_output(self):
+        files = (("public/a.py", "one"), ("public/b.py", "two"))
+        with patch("experiments.secure_context_path_policy.evaluate_file", side_effect=[(Decision.ALLOW, "one"), RuntimeError("sensitive error")]):
             self.assertEqual(evaluate_bundle(files, "binary", source="public", raw_policy="{}",
                                              allowed=("public",), forbidden=()), (Decision.BLOCK, None))
 
