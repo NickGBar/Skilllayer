@@ -24,12 +24,21 @@ jobs:
       - name: Check tag and install test dependencies
         run: |
           python scripts/check_tag_version.py "${GITHUB_REF_NAME}"
-          python -m pip install --upgrade pip build
+          # The same test environment as ubuntu-full-suite in ci.yml, so a tag runs the suite CI passed.
+          python -m pip install --upgrade pip setuptools wheel build
           python -m pip install -e ".[mcp,dev]"
+          python -m pip install -r experiments/secure_context_day1/requirements-presidio.txt
           python -m skilllayer policy check --json
           python -m skilllayer policy dry-run safe-change --json
           python -m skilllayer policy dry-run release-readiness --json
+      - name: Install pinned Gitleaks for synthetic probe
+        run: |
+          curl -fsSL --retry 3 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
       - name: Run full suite
+        env:
+          SECURE_CONTEXT_GITLEAKS: ${{ runner.temp }}/gitleaks
         run: python -u -m pytest tests/ -q -p no:cacheprovider
       - name: Build artifacts
         run: python -m build --outdir "$RUNNER_TEMP/dist"
