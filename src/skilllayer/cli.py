@@ -5,6 +5,7 @@ import dataclasses
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -62,6 +63,8 @@ from .workflow_repair import run_workflow_repair_report
 from .version import product_version
 from . import gate as gate_core
 from . import gate_cases
+from . import context_clean
+from . import review_packet
 from . import verify as verify_core
 from . import verify_hook
 from .runner.core import (
@@ -83,7 +86,7 @@ COMMANDS = {
     "policy",
     "mcp-config",
     "mcp-config-check",
-    "safe-change", "release-readiness", "resume-work", "verify", "gate", "cases",
+    "safe-change", "release-readiness", "resume-work", "verify", "gate", "cases", "review-packet", "context",
     "stats", "analytics", "benchmark", "analyze-failures", "repair-workflows-report",
     "optimize-cost-report", "generalization-report", "packaging-audit", "open-source-audit",
     "usage-report", "cost-report", "ab-benchmark", "validate-live-telemetry", "demand-report",
@@ -110,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     started = time.perf_counter()
     command_name = str(getattr(args, "command", None) or argv[0] or "unknown")
-    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify", "gate", "cases"}
+    telemetry_exempt = {"release-check", "update-check", "diagnostics", "verify", "gate", "cases", "review-packet", "context"}
     if automatic_telemetry_enabled() and command_name not in telemetry_exempt:
         telemetry_paths = (
             automatic_telemetry_paths()
@@ -284,6 +287,41 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--lang", choices=list(gate_core.LANGUAGES), default=None, help="Language of the console output. Defaults to $SKILLLAYER_LANG, then en.")
         sub.add_argument("--json", action="store_true", help="Print strict JSON only.")
         sub.set_defaults(handler=handler)
+
+    packet_parser = subparsers.add_parser(
+        "review-packet",
+        help="A local Markdown summary for the reviewer: what changed, and which checks ran according to a gate receipt that matches the change. Never decides on merge.",
+    )
+    packet_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
+    packet_parser.add_argument("--base", required=True, help="Ref the change set is measured from, e.g. origin/main.")
+    packet_parser.add_argument("--head", default="HEAD", help="Commit under review. Defaults to HEAD.")
+    packet_parser.add_argument("--gate-receipt", default=None, metavar="FILE", help="Gate receipt for this change. Used only when its digest (and signature, with SKILLLAYER_RECEIPT_KEY) checks out and its head and merge base match.")
+    packet_parser.add_argument("--verify-receipt", default=None, metavar="FILE", help="Verify receipt, shown as context only.")
+    packet_parser.add_argument("--output", default=None, metavar="FILE", help="Write the packet to this file instead of standard output.")
+    packet_parser.add_argument("--lang", choices=list(gate_core.LANGUAGES), default=None, help="Language of the packet. Defaults to $SKILLLAYER_LANG, then en.")
+    packet_parser.set_defaults(handler=handle_review_packet)
+
+    context_parser = subparsers.add_parser(
+        "context",
+        help="Clean context before it goes to a model: replace listed client and project names, personal data and secrets with keyed tokens, verify the result, and restore the originals in the answer. Local only.",
+    )
+    context_sub = context_parser.add_subparsers(dest="context_command")
+    context_clean_parser = context_sub.add_parser("clean", help="Replace, verify, print the cleaned text. Exit 2 and print nothing when the result cannot be verified.")
+    context_clean_parser.add_argument("--entity", action="append", default=None, metavar="LABEL=NAME[,NAME...]", help="A client or project to hide, e.g. client_a=Agrobot,Агробот. Repeatable.")
+    context_clean_parser.add_argument("--entities", default=None, metavar="FILE", help='JSON file: {"entities": [{"label": "client_a", "aliases": ["Agrobot"]}]}.')
+    context_kind = context_clean_parser.add_mutually_exclusive_group()
+    context_kind.add_argument("--python", action="store_true", help="Treat the input as Python and prove its logic is unchanged. Default for a .py --in file.")
+    context_kind.add_argument("--text", action="store_true", help="Treat the input as plain text even if it is a .py file.")
+    context_clean_parser.add_argument("--secrets", choices=["transform", "block"], default="transform", help="transform (default): replace secret values; block: refuse input that contains one.")
+    context_clean_parser.set_defaults(handler=handle_context_clean)
+    context_restore_parser = context_sub.add_parser("restore", help="Put the originals back into a model's answer; report tokens that were never issued.")
+    context_restore_parser.set_defaults(handler=handle_context_restore)
+    for sub in (context_clean_parser, context_restore_parser):
+        sub.add_argument("--in", dest="input", default=None, metavar="FILE", help="Read from this file instead of standard input.")
+        sub.add_argument("--out", dest="output", default=None, metavar="FILE", help="Write to this file instead of standard output.")
+        sub.add_argument("--home", default=None, metavar="DIR", help="Directory with the key and the token table. Defaults to $SKILLLAYER_CONTEXT_DIR, then ~/.skilllayer/context.")
+        sub.add_argument("--lang", choices=list(gate_core.LANGUAGES), default=None, help="Language of the report on standard error. Defaults to $SKILLLAYER_LANG, then en.")
+        sub.add_argument("--json", action="store_true", help="Print strict JSON only.")
 
     release_readiness_parser = subparsers.add_parser("release-readiness", help="Assess whether a repository is ready for careful external release.")
     release_readiness_parser.add_argument("--repo", default=None, help="Repository path. Defaults to the current working directory.")
@@ -813,6 +851,102 @@ def handle_cases_summary(args: argparse.Namespace) -> int:
         print(json.dumps(summary, indent=2, ensure_ascii=False))
     else:
         print(gate_cases.render_summary(summary, lang=gate_core.resolve_lang(args.lang)))
+    return 0
+
+
+def handle_review_packet(args: argparse.Namespace) -> int:
+    key, _ = gate_core.take_receipt_key_from_env()
+    def path(value):
+        return Path(value).expanduser() if value else None
+    try:
+        packet = review_packet.make_packet(
+            _resolve_repo_arg(args.repo), args.base, args.head, path(args.gate_receipt), path(args.verify_receipt),
+            lang=gate_core.resolve_lang(args.lang), key=key,
+        )
+        if args.output:
+            Path(args.output).expanduser().write_text(packet, encoding="utf-8")
+        else:
+            print(packet, end="")
+    except (subprocess.CalledProcessError, OSError, ValueError) as exc:
+        print(f"skilllayer review-packet: cannot create the packet: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+_CONTEXT_TEXT = {
+    "en": {"done": "skilllayer context clean: {decision}; replaced: {replaced}{structure}",
+           "structure": "; Python structure proven unchanged", "nothing": "nothing",
+           "blocked": "skilllayer context clean: BLOCK, nothing was written: {reasons}",
+           "unknown": "skilllayer context restore: tokens that were never issued: {tokens}"},
+    "ru": {"done": "skilllayer context clean: {decision}; заменено: {replaced}{structure}",
+           "structure": "; структура Python доказанно не изменилась", "nothing": "ничего",
+           "blocked": "skilllayer context clean: BLOCK, ничего не записано: {reasons}",
+           "unknown": "skilllayer context restore: токены, которые не выдавались: {tokens}"},
+}
+
+
+def _context_io(args: argparse.Namespace) -> tuple[str, Path]:
+    text = Path(args.input).expanduser().read_text(encoding="utf-8") if args.input else sys.stdin.read()
+    return text, Path(args.home).expanduser() if args.home else context_clean.context_dir()
+
+
+def _context_write(args: argparse.Namespace, text: str) -> None:
+    if args.output:
+        Path(args.output).expanduser().write_text(text, encoding="utf-8")
+    elif not args.json:
+        sys.stdout.write(text)
+
+
+def handle_context_clean(args: argparse.Namespace) -> int:
+    words = _CONTEXT_TEXT[gate_core.resolve_lang(args.lang)]
+    try:
+        entities = tuple(context_clean.parse_entity(spec) for spec in args.entity or [])
+        if args.entities:
+            entities += context_clean.load_entities(Path(args.entities).expanduser())
+        text, home = _context_io(args)
+        vault = context_clean.load_vault(home, create=True)
+    except (OSError, ValueError, UnicodeError) as exc:
+        print(f"skilllayer context clean: {exc}", file=sys.stderr)
+        return 1
+    python = args.python or (not args.text and bool(args.input) and args.input.endswith(".py"))
+    result = context_clean.pseudonymize(text, vault=vault, entities=entities, python=python, secrets=args.secrets)
+    if result.output is None:
+        if args.json:
+            print(json.dumps({"decision": result.decision, "reasons": result.reasons}, indent=2))
+        else:
+            print(words["blocked"].format(reasons=", ".join(result.reasons)), file=sys.stderr)
+        return 2
+    try:
+        context_clean.save_vault(home, vault)
+        _context_write(args, result.output)
+    except OSError as exc:
+        print(f"skilllayer context clean: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps({"decision": result.decision, "replaced": result.replaced,
+                          "structure_checked": result.structure_checked,
+                          "output": None if args.output else result.output}, indent=2, ensure_ascii=False))
+    else:
+        replaced = ", ".join(f"{k} {v}" for k, v in result.replaced.items()) or words["nothing"]
+        print(words["done"].format(decision=result.decision, replaced=replaced,
+                                   structure=words["structure"] if result.structure_checked else ""), file=sys.stderr)
+    return 0
+
+
+def handle_context_restore(args: argparse.Namespace) -> int:
+    try:
+        text, home = _context_io(args)
+        vault = context_clean.load_vault(home, create=False)
+        restored, unknown = context_clean.restore(text, vault)
+        _context_write(args, restored)
+    except (OSError, ValueError, UnicodeError) as exc:
+        print(f"skilllayer context restore: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps({"output": None if args.output else restored, "unknown_tokens": unknown}, indent=2, ensure_ascii=False))
+    elif unknown:
+        words = _CONTEXT_TEXT[gate_core.resolve_lang(args.lang)]
+        print(words["unknown"].format(tokens=", ".join(unknown)), file=sys.stderr)
     return 0
 
 
