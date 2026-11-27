@@ -46,12 +46,16 @@
 ## Шаг 1. Установка
 
 ```bash
-pipx install git+https://github.com/NickGBar/Skilllayer.git
+pipx install git+https://github.com/NickGBar/Skilllayer.git@v0.3.0
 ```
+
+Метка `v0.3.0` фиксирует версию на весь пилот: всё, что мы посчитаем, будет
+относиться к одной версии. Обновляемся, только когда договоримся.
 
 Проверить:
 
 ```bash
+skilllayer --version   # 0.3.0
 skilllayer gate --help
 ```
 
@@ -80,6 +84,11 @@ skilllayer gate --base origin/main --mode warn --lang ru \
 
 - GitHub Actions — [`examples/gate/github-actions.yml`](../examples/gate/github-actions.yml)
 - GitLab CI — [`examples/gate/gitlab-ci.yml`](../examples/gate/gitlab-ci.yml)
+
+В скопированном файле поставьте ту же версию, что в шаге 1: в строке
+`pip install` замените `git+https://github.com/NickGBar/Skilllayer.git` на
+`git+https://github.com/NickGBar/Skilllayer.git@v0.3.0`. Иначе CI поставит
+последнюю версию из `main`.
 
 Суть одна:
 
