@@ -1,9 +1,15 @@
-"""Synthetic regression cases for the reversible pseudonymization probe."""
+"""Context cleaning replaces names, personal data and secrets, proves Python logic unchanged, and restores."""
 import hashlib
+import io
+import json
+import stat
 import unittest
 
-from experiments.context_pseudonymize import (
-    Decision, Entity, Vault, _inn_ok, _luhn_ok, _only_digits, _snils_ok, canonical_dump,
+import pytest
+
+from skilllayer.cli import main
+from skilllayer.context_clean import (
+    ALLOW, BLOCK, CONTEXT_DIR_ENV, TRANSFORM, Entity, Vault, _inn_ok, _luhn_ok, _only_digits, _snils_ok, canonical_dump,
     pseudonymize, restore,
 )
 
@@ -34,7 +40,7 @@ def run(text, *, python=False, key=KEY, **kw):
 class PythonContextTests(unittest.TestCase):
     def test_names_personal_data_and_secret_are_replaced_and_restored(self):
         result, vault = run(SOURCE, python=True)
-        self.assertEqual(result.decision, Decision.TRANSFORM, result.reasons)
+        self.assertEqual(result.decision, TRANSFORM, result.reasons)
         self.assertTrue(result.structure_checked)
         for leaked in ("grobot", "GROBOT", "agro_bot", "AGRO-BOT", "ivan.petrov", "912", GH):
             self.assertNotIn(leaked, result.output)
@@ -49,12 +55,12 @@ class PythonContextTests(unittest.TestCase):
 
     def test_code_reading_a_secret_is_not_a_secret(self):
         result, _ = run('token = request.headers.get("Authorization")\n', python=True)
-        self.assertEqual(result.decision, Decision.ALLOW)
+        self.assertEqual(result.decision, ALLOW)
 
     def test_sensitive_value_outside_strings_blocks(self):
         result, _ = run(f"x = {GH}\n", python=True)
         self.assertEqual((result.decision, result.reasons),
-                         (Decision.BLOCK, ["sensitive_value_outside_string_or_comment"]))
+                         (BLOCK, ["sensitive_value_outside_string_or_comment"]))
 
     def test_unparseable_python_blocks(self):
         self.assertEqual(run("def broken(:\n", python=True)[0].reasons, ["python_parse_failed"])
@@ -62,7 +68,7 @@ class PythonContextTests(unittest.TestCase):
     def test_renaming_a_keyword_or_constant_is_caught_by_the_structure_check(self):
         for alias, source in (("return", "def f():\n    return 1\n"), ("None", "x = None\n")):
             result = pseudonymize(source, vault=Vault(KEY), entities=(Entity("bad", (alias,)),), python=True)
-            self.assertEqual((result.decision, result.reasons), (Decision.BLOCK, ["python_structure_changed"]))
+            self.assertEqual((result.decision, result.reasons), (BLOCK, ["python_structure_changed"]))
 
     def test_structure_check_tells_renaming_from_logic_change(self):
         self.assertEqual(canonical_dump("def f(a):\n    return a + 1\n"),
@@ -81,7 +87,7 @@ class NameMatchingTests(unittest.TestCase):
 
     def test_parts_of_other_words_are_left_alone(self):
         result, _ = run("agronomy robotics agrobotanical")
-        self.assertEqual((result.decision, result.output), (Decision.ALLOW, "agronomy robotics agrobotanical"))
+        self.assertEqual((result.decision, result.output), (ALLOW, "agronomy robotics agrobotanical"))
 
     def test_invisible_characters_block(self):
         self.assertEqual(run("Agro​bot")[0].reasons, ["invisible_or_bidi_characters"])
@@ -92,7 +98,7 @@ class PersonalDataTests(unittest.TestCase):
         text = ("ИНН 7707083893; INN: 500100732259; СНИЛС 112-233-445 95; "
                 "card 4111 1111 1111 1111; tel 8 (912) 345-67-89; ip 8.8.8.8")
         result, vault = run(text)
-        self.assertEqual(result.decision, Decision.TRANSFORM, result.reasons)
+        self.assertEqual(result.decision, TRANSFORM, result.reasons)
         self.assertEqual(result.replaced, {"inn": 2, "snils": 1, "card": 1, "phone": 1, "ip": 1})
         out = {orig: tok for tok, orig in vault.reverse.items()}
         self.assertTrue(_inn_ok(_only_digits(out["7707083893"])))
@@ -106,7 +112,7 @@ class PersonalDataTests(unittest.TestCase):
     def test_numbers_without_context_or_valid_checksum_are_left_alone(self):
         text = ("id 7707083893; ИНН 7707083894; snils-like 112-233-445 96; "
                 "card 4111 1111 1111 1112; version 999.1.1.1")
-        self.assertEqual(run(text)[0].decision, Decision.ALLOW)
+        self.assertEqual(run(text)[0].decision, ALLOW)
 
     def test_restore_does_not_touch_longer_numbers(self):
         result, vault = run("ip 8.8.8.8")
@@ -118,7 +124,7 @@ class PersonalDataTests(unittest.TestCase):
 class SecretTests(unittest.TestCase):
     def test_secret_value_replaced_and_core_scanner_clean(self):
         result, vault = run(f'log: password="{GH}" via Bearer abcdefghijklmnopqrstuvwxyz0123')
-        self.assertEqual(result.decision, Decision.TRANSFORM, result.reasons)
+        self.assertEqual(result.decision, TRANSFORM, result.reasons)
         self.assertEqual(result.replaced, {"secret": 2})
         self.assertIn('password="SECRET_', result.output)
 
@@ -143,7 +149,7 @@ class VaultTests(unittest.TestCase):
         vault = Vault(KEY)
         first = pseudonymize("Agrobot", vault=vault, entities=CLIENT).output
         result = pseudonymize(f"Agrobot and {first}", vault=Vault(KEY), entities=CLIENT)
-        self.assertEqual(result.decision, Decision.BLOCK)
+        self.assertEqual(result.decision, BLOCK)
         self.assertIn("token_already_in_input", result.reasons)
 
     def test_restore_model_answer_and_report_invented_tokens(self):
@@ -156,3 +162,81 @@ class VaultTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- command line
+
+
+def _cli(tmp_path, monkeypatch, *args):
+    monkeypatch.setenv(CONTEXT_DIR_ENV, str(tmp_path / "home"))
+    return main(["context", *args])
+
+
+def test_cli_round_trip_keeps_tokens_stable_and_files_private(tmp_path, monkeypatch, capsys):
+    src = tmp_path / "billing.py"
+    src.write_text(SOURCE, encoding="utf-8")
+    first, second, back = tmp_path / "1.py", tmp_path / "2.py", tmp_path / "back.py"
+    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(first), "--entity", "client_a=Agrobot,Агробот") == 0
+    assert "Python structure proven unchanged" in capsys.readouterr().err
+    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(second), "--entity", "client_a=Agrobot") == 0
+    assert first.read_text() == second.read_text()
+    assert "grobot" not in first.read_text()
+    assert _cli(tmp_path, monkeypatch, "restore", "--in", str(first), "--out", str(back)) == 0
+    assert back.read_text() == SOURCE
+    for name in ("key", "vault.json"):
+        assert stat.S_IMODE((tmp_path / "home" / name).stat().st_mode) == 0o600
+
+
+def test_cli_block_writes_nothing(tmp_path, monkeypatch, capsys):
+    src = tmp_path / "x.py"
+    src.write_text(f"x = {GH}\n", encoding="utf-8")
+    out = tmp_path / "out.py"
+    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(out)) == 2
+    assert not out.exists()
+    captured = capsys.readouterr()
+    assert captured.out == "" and "sensitive_value_outside_string_or_comment" in captured.err
+
+
+def test_cli_stdin_json_entities_file_and_text_mode(tmp_path, monkeypatch, capsys):
+    entities = tmp_path / "entities.json"
+    entities.write_text(json.dumps({"entities": [{"label": "client_a", "aliases": ["Agrobot"]}]}), encoding="utf-8")
+    monkeypatch.setattr("sys.stdin", io.StringIO("Agrobot asked about invoices\n"))
+    assert _cli(tmp_path, monkeypatch, "clean", "--entities", str(entities), "--json") == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["decision"] == TRANSFORM and result["output"].startswith("client_a_")
+    src = tmp_path / "notes.py"
+    src.write_text("Agrobot (not valid Python\n", encoding="utf-8")
+    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--entities", str(entities), "--text", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["structure_checked"] is False
+
+
+def test_cli_restore_reports_invented_tokens(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin", io.StringIO("Agrobot\n"))
+    assert _cli(tmp_path, monkeypatch, "clean", "--entity", "client_a=Agrobot") == 0
+    token = capsys.readouterr().out.strip()
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{token} and client_a_deadbeef\n"))
+    assert _cli(tmp_path, monkeypatch, "restore", "--json") == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"output": "Agrobot and client_a_deadbeef\n", "unknown_tokens": ["client_a_deadbeef"]}
+
+
+@pytest.mark.parametrize("args", [
+    ["clean", "--entity", "Client-A=Agrobot"], ["clean", "--entity", "client_a=ab"], ["clean", "--entity", "client_a="],
+    ["restore"],  # no key yet
+])
+def test_cli_refuses_bad_configuration(tmp_path, monkeypatch, capsys, args):
+    monkeypatch.setattr("sys.stdin", io.StringIO("text\n"))
+    assert _cli(tmp_path, monkeypatch, *args) == 1
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_refuses_a_table_that_is_not_one_to_one(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("sys.stdin", io.StringIO("Agrobot\n"))
+    assert _cli(tmp_path, monkeypatch, "clean", "--entity", "client_a=Agrobot") == 0
+    table = tmp_path / "home" / "vault.json"
+    data = json.loads(table.read_text())
+    data["entries"].append({**data["entries"][0], "original": "Other"})
+    table.write_text(json.dumps(data))
+    monkeypatch.setattr("sys.stdin", io.StringIO("x\n"))
+    assert _cli(tmp_path, monkeypatch, "restore") == 1
+    assert "not one-to-one" in capsys.readouterr().err

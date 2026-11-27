@@ -2,8 +2,21 @@
 
 ## Unreleased
 
+Version 0.3.0: the baseline for pilots — the gate, the case log, the review packet and context
+cleaning as commands of one installed tool.
+
 ### Added
 
+- `skilllayer review-packet`: a local Markdown summary for the reviewer — what changed, and which
+  checks ran according to a gate receipt that matches the change (digest, head and merge base; the
+  signature too when `SKILLLAYER_RECEIPT_KEY` is set). A verify receipt is context only. Never
+  decides on merge. Russian and English (`--lang`). Replaces `scripts/review_packet.py`.
+- `skilllayer context clean` / `restore`: replace listed client and project names, secrets and
+  personal data (email, phones, ИНН, СНИЛС, cards, public IPs) with keyed tokens before context goes
+  to a model; verify the result — nothing left, exact round trip, and for Python proof that only
+  names and string values changed — and put the originals back into the answer. The key and the
+  token table stay owner-only under `~/.skilllayer/context`. Moved from `experiments/`; see
+  [docs/CONTEXT_CLEAN.md](docs/CONTEXT_CLEAN.md).
 - `skilllayer cases`: a case log for pilots of the gate. `list` shows every failed or unverified
   check from the gate's receipts with a stable id; `label` records whether stopping the change was
   correct, a false positive or unsure, whether it was fixed and the minutes spent; `summary` gives

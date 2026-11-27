@@ -1,12 +1,12 @@
-"""Deterministic, reversible pseudonymization of context before it is sent to a model.
+"""Reversible, verified cleaning of context before it is sent to a model.
 
-Synthetic-only research probe. It replaces configured client/project names, a few
-personal-data formats and secrets with keyed tokens, checks the result, and restores
-the originals in the model's answer. For Python it also proves that the program
-changed only by a consistent renaming of names and string values.
+Replaces listed client and project names, a few personal-data formats and secrets with
+keyed tokens, checks the result, and restores the originals in the model's answer. For
+Python it also proves that the program changed only by a consistent, one-to-one renaming
+of names and string values. Anything unexpected blocks.
 
-Not a security boundary and not a general-purpose anonymizer: see
-CONTEXT_PSEUDONYMIZE.md for what is and is not covered.
+Not a security boundary and not a general-purpose anonymizer: docs/CONTEXT_CLEAN.md lists
+what is and is not covered. The key and the token table never leave the machine.
 """
 from __future__ import annotations
 
@@ -14,16 +14,19 @@ import ast
 import hashlib
 import hmac
 import io
+import json
+import os
 import re
+import secrets as _secrets
 import tempfile
 import tokenize
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from experiments.secure_context_policy_demo import Decision
-from skilllayer.runner.core import _SECRET_PATTERNS, build_detect_secrets_artifacts
+from .runner.core import _SECRET_PATTERNS, build_detect_secrets_artifacts
 
 MAX_INPUT_CHARS = 1_000_000
+ALLOW, TRANSFORM, BLOCK = "ALLOW", "TRANSFORM", "BLOCK"
 
 # ---------------------------------------------------------------- vault
 
@@ -57,6 +60,22 @@ class Vault:
                 self.reverse[candidate] = original
                 return candidate
         raise ValueError("no collision-free token")
+
+    def entries(self) -> list[dict[str, str]]:
+        """The table, for saving next to the key: kind, original, token."""
+        return [{"kind": kind, "original": original, "token": token}
+                for (kind, original), token in self._forward.items()]
+
+    def load(self, entries: list[dict[str, str]]) -> None:
+        """Restore a saved table. Raises ValueError for a table that is not one-to-one."""
+        for entry in entries:
+            kind, original, token = entry["kind"], entry["original"], entry["token"]
+            if not all(isinstance(v, str) and v for v in (kind, original, token)):
+                raise ValueError("vault entry fields must be non-empty strings")
+            if self.reverse.get(token, original) != original or self._forward.get((kind, original), token) != token:
+                raise ValueError("vault entries are not one-to-one")
+            self._forward[(kind, original)] = token
+            self.reverse[token] = original
 
 
 def _hex8(digest: bytes) -> str:
@@ -351,7 +370,7 @@ def canonical_dump(src: str) -> str:
 
 @dataclass
 class Result:
-    decision: Decision
+    decision: str
     output: str | None
     replaced: dict[str, int] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
@@ -394,7 +413,7 @@ def pseudonymize(text: str, *, vault: Vault, entities: tuple[Entity, ...], pytho
                  secrets: str = "transform") -> Result:
     """Replace, verify, and return ALLOW / TRANSFORM, or BLOCK with reasons."""
     def block(*reasons):
-        return Result(Decision.BLOCK, None, reasons=list(reasons))
+        return Result(BLOCK, None, reasons=list(reasons))
 
     if (not isinstance(text, str) or len(text) > MAX_INPUT_CHARS or secrets not in ("transform", "block")
             or not all(isinstance(e, Entity) and _LABEL.fullmatch(e.label)
@@ -459,7 +478,7 @@ def pseudonymize(text: str, *, vault: Vault, entities: tuple[Entity, ...], pytho
             reasons.append("python_structure_changed")
     if reasons:
         return block(*reasons)
-    return Result(Decision.TRANSFORM if spans else Decision.ALLOW, output, replaced,
+    return Result(TRANSFORM if spans else ALLOW, output, replaced,
                   structure_checked=structure_checked)
 
 
@@ -479,3 +498,67 @@ def restore(text: str, vault: Vault) -> tuple[str, list[str]]:
     pattern = re.compile("|".join(alternatives))
     unknown = sorted({m.group() for m in _TOKEN_SHAPE.finditer(pattern.sub(" ", text))})
     return pattern.sub(lambda m: vault.reverse[m.group()], text), unknown
+
+
+# ---------------------------------------------------------------- local storage
+
+CONTEXT_DIR_ENV = "SKILLLAYER_CONTEXT_DIR"
+_KEY_FILE, _VAULT_FILE = "key", "vault.json"
+
+
+def context_dir() -> Path:
+    """Per-user directory for the key and the token table, outside any repository."""
+    return Path(os.environ[CONTEXT_DIR_ENV]) if os.environ.get(CONTEXT_DIR_ENV) else Path.home() / ".skilllayer" / "context"
+
+
+def load_vault(directory: Path, *, create: bool) -> Vault:
+    """The vault under ``directory``; with ``create``, a new random key on first use (mode 0600)."""
+    key_path = directory / _KEY_FILE
+    if not key_path.exists():
+        if not create:
+            raise ValueError(f"no key in {directory}: nothing was cleaned with it yet")
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(_secrets.token_hex(32) + "\n")
+    vault = Vault(bytes.fromhex(key_path.read_text(encoding="utf-8").strip()))
+    table = directory / _VAULT_FILE
+    if table.exists():
+        data = json.loads(table.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.get("version") != 1 or not isinstance(data.get("entries"), list):
+            raise ValueError(f"{table} is not a token table this version can read")
+        vault.load(data["entries"])
+    return vault
+
+
+def save_vault(directory: Path, vault: Vault) -> None:
+    """Write the token table atomically, readable by the owner only. It holds the originals."""
+    tmp = directory / (_VAULT_FILE + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump({"version": 1, "entries": vault.entries()}, fh, ensure_ascii=False, indent=1)
+    os.replace(tmp, directory / _VAULT_FILE)
+
+
+def parse_entity(spec: str) -> Entity:
+    """``label=Name[,Other name]`` from the command line."""
+    label, _, names = spec.partition("=")
+    return _entity(label.strip(), [n.strip() for n in names.split(",") if n.strip()])
+
+
+def load_entities(path: Path) -> tuple[Entity, ...]:
+    """``{"entities": [{"label": "client_a", "aliases": ["Agrobot", "Агробот"]}]}``."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    items = data.get("entities") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        raise ValueError(f"{path}: expected an object with an 'entities' list")
+    return tuple(_entity(item.get("label"), item.get("aliases")) for item in items if isinstance(item, dict))
+
+
+def _entity(label, aliases) -> Entity:
+    if not isinstance(label, str) or not _LABEL.fullmatch(label):
+        raise ValueError(f"label {label!r}: use 1-16 lowercase letters, digits or _ , starting with a letter")
+    if (not isinstance(aliases, list) or not aliases
+            or not all(isinstance(a, str) and len(_alias_key(a)) >= 3 for a in aliases)):
+        raise ValueError(f"label {label!r}: give at least one name of 3 or more letters or digits")
+    return Entity(label, tuple(aliases))

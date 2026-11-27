@@ -1,11 +1,26 @@
-# Reversible context pseudonymization (synthetic probe)
+# Context cleaning
 
-**Status:** research probe on synthetic input. Not wired into Core, the gate or any
-model route. Not a security boundary.
+`skilllayer context clean` replaces listed client and project names, personal data and secrets
+with keyed tokens before context goes to a model, checks its own result, and prints the cleaned
+text. `skilllayer context restore` puts the originals back into the model's answer. Everything
+stays on the machine. It is a convenience with checks, not a security boundary.
+
+```bash
+skilllayer context clean --in billing.py --entity client_a=Agrobot,Агробот > billing.clean.py
+# … send billing.clean.py to the model, save its answer as answer.txt …
+skilllayer context restore --in answer.txt > answer.restored.txt
+```
+
+A team can keep its list in a file: `--entities names.json` with
+`{"entities": [{"label": "client_a", "aliases": ["Agrobot", "Агробот"]}]}`.
+
+Exit codes: `0` cleaned (or nothing to clean), `2` blocked — nothing was written, the reasons are
+on standard error — and `1` for bad input or configuration. `--json` prints the decision, the
+counts and the output as JSON.
 
 ## What it does
 
-Before context leaves the machine, `experiments/context_pseudonymize.py` replaces:
+Before context leaves the machine, the command replaces:
 
 | What | How it is found | Replaced with |
 |---|---|---|
@@ -30,9 +45,10 @@ Then it checks its own work and answers `ALLOW` (nothing to replace), `TRANSFORM
    the output. It reads `token = expr` in code as a secret, so it is not used for Python.
 5. **Fail closed:** invisible or bidi characters, unparseable Python, a secret or personal
    value outside a string or comment in Python, an unterminated private key, or a token
-   that already occurs in the input → `BLOCK`.
+   that already occurs in the input → `BLOCK`. A `.py` file given with `--in` is treated as
+   Python; `--python` and `--text` override that.
 
-`restore()` puts the originals back into the model's answer, including inside new names
+`context restore` puts the originals back into the model's answer, including inside new names
 the model built from a token (`client_a_3f9c21b0_total_v2` → `agrobot_total_v2`), and
 lists token-shaped strings it never issued.
 
@@ -48,8 +64,7 @@ ciphertext is long, unreadable and breaks identifiers.
 
 ## What it does not cover
 
-- **Code logic itself.** An algorithm stays recognizable after renaming. Out of scope by
-  decision (27 Nov 2026).
+- **Code logic itself.** An algorithm stays recognizable after renaming.
 - **Names nobody listed.** People's names and addresses in free text need a language model
   to find, which would make the check non-deterministic. Only listed names are replaced.
 - **Other formats:** phones other than +7/8 and +1, passports, bank accounts, IBAN, IPv6.
@@ -64,12 +79,10 @@ ciphertext is long, unreadable and breaks identifiers.
 - **Each entity spelling gets its own token** (`Agrobot` and `AGROBOT` differ) so restore
   is exact; the shared label shows they are one client.
 
-## Run
+## Key and token table
 
-```sh
-PYTHONPATH=src:. python -m pytest -q tests/test_context_pseudonymize.py
-PYTHONPATH=src:. python experiments/context_pseudonymize_demo.py
-```
-
-The key in tests and the demo is a fixed synthetic value. Real use needs 32+ random bytes
-kept locally and reused, so tokens stay stable across requests.
+The first run creates a random 32-byte key in `~/.skilllayer/context/key`
+(`$SKILLLAYER_CONTEXT_DIR` or `--home` to move it), readable by the owner only. The token table,
+`vault.json` next to it, holds the originals and is also owner-only; it is written only after a
+run passes all checks. Keep both if you want tokens to stay the same across requests; delete both
+to start over. Neither is ever sent anywhere.

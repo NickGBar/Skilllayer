@@ -102,6 +102,13 @@ Details, trust boundaries and the measurement: [docs/GATE.md](docs/GATE.md).
 
 - **`skilllayer verify`** — a Claude Code Stop hook that runs the same kind of checks while the
   agent is still working and sends it back when they fail. [docs/VERIFY.md](docs/VERIFY.md).
+- **`skilllayer cases`** — a case log for pilots: label whether each stop by the gate was right
+  and get the false-positive share. [docs/GATE.md](docs/GATE.md#case-log).
+- **`skilllayer review-packet`** — a Markdown summary for the reviewer built from git and a
+  matching gate receipt. [docs/REVIEW_PACKET.md](docs/REVIEW_PACKET.md) (in Russian).
+- **`skilllayer context clean`** — replace client names, personal data and secrets before context
+  goes to a model, prove Python logic unchanged, restore the answer.
+  [docs/CONTEXT_CLEAN.md](docs/CONTEXT_CLEAN.md).
 - **Agent tools** — the MCP tools SkillLayer started with (safe change, release readiness, resume
   work, Verified Task Execution). [docs/AGENT_TOOLS.md](docs/AGENT_TOOLS.md).
 
