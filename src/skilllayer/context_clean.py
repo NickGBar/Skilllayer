@@ -547,7 +547,7 @@ def parse_entity(spec: str) -> Entity:
 
 
 def load_entities(path: Path) -> tuple[Entity, ...]:
-    """``{"entities": [{"label": "client_a", "aliases": ["Agrobot", "Агробот"]}]}``."""
+    """``{"entities": [{"label": "client_a", "aliases": ["Northwind", "Нортвинд"]}]}``."""
     data = json.loads(path.read_text(encoding="utf-8"))
     items = data.get("entities") if isinstance(data, dict) else None
     if not isinstance(items, list):
