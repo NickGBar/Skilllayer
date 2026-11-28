@@ -46,16 +46,16 @@
 ## Шаг 1. Установка
 
 ```bash
-pipx install git+https://github.com/NickGBar/Skilllayer.git@v0.3.0
+pipx install git+https://github.com/NickGBar/Skilllayer.git@v0.3.1
 ```
 
-Метка `v0.3.0` фиксирует версию на весь пилот: всё, что мы посчитаем, будет
+Метка `v0.3.1` фиксирует версию на весь пилот: всё, что мы посчитаем, будет
 относиться к одной версии. Обновляемся, только когда договоримся.
 
 Проверить:
 
 ```bash
-skilllayer --version   # 0.3.0
+skilllayer --version   # 0.3.1
 skilllayer gate --help
 ```
 
@@ -87,7 +87,7 @@ skilllayer gate --base origin/main --mode warn --lang ru \
 
 В скопированном файле поставьте ту же версию, что в шаге 1: в строке
 `pip install` замените `git+https://github.com/NickGBar/Skilllayer.git` на
-`git+https://github.com/NickGBar/Skilllayer.git@v0.3.0`. Иначе CI поставит
+`git+https://github.com/NickGBar/Skilllayer.git@v0.3.1`. Иначе CI поставит
 последнюю версию из `main`.
 
 Суть одна:

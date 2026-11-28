@@ -1,9 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-11-29
 
-Version 0.3.0: the baseline for pilots — the gate, the case log, the review packet and context
-cleaning as commands of one installed tool.
+### Changed
+
+- Examples, help text and tests use the fictional company Northwind as the client name to hide.
+- The pilot guide installs a pinned version, also in the CI file it points to.
+- The release workflow runs the full suite in the same environment as CI, names the repository
+  when it publishes, and writes `SHA256SUMS` with bare file names, so `sha256sum -c` works.
+
+## 0.3.0 — 2026-11-27
+
+The baseline for pilots: the gate, the case log, the review packet and context cleaning as
+commands of one installed tool.
 
 ### Added
 

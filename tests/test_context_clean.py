@@ -14,21 +14,21 @@ from skilllayer.context_clean import (
 )
 
 KEY = b"synthetic-test-key-0123456789abcdef"
-CLIENT = (Entity("client_a", ("Agrobot", "Агробот")),)
+CLIENT = (Entity("client_a", ("Northwind", "Нортвинд")),)
 GH = "ghp_A1b2C3d4E5f6G7h8J9k0L1m2N3o4P5q6R7s8T9u0"  # synthetic, not a credential
 
-SOURCE = f'''# Agrobot billing, see AGRO-BOT notes
-AGROBOT_TOKEN = "{GH}"
+SOURCE = f'''# Northwind billing, see NORTH-WIND notes
+NORTHWIND_TOKEN = "{GH}"
 
 
-class AgrobotInvoice:
-    """Sent to ivan.petrov@agrobot.example, +7 (912) 345-67-89."""
+class NorthwindInvoice:
+    """Sent to ivan.petrov@northwind.example, +7 (912) 345-67-89."""
 
-    def agrobot_total(self, items, client="Agrobot"):
-        if client == "Agrobot" and items:
+    def northwind_total(self, items, client="Northwind"):
+        if client == "Northwind" and items:
             return sum(items) * 0.9
         token = request.headers.get("Authorization")
-        return f"{{client}}: {{sum(items)}} agro_bot"
+        return f"{{client}}: {{sum(items)}} north_wind"
 '''
 
 
@@ -42,13 +42,13 @@ class PythonContextTests(unittest.TestCase):
         result, vault = run(SOURCE, python=True)
         self.assertEqual(result.decision, TRANSFORM, result.reasons)
         self.assertTrue(result.structure_checked)
-        for leaked in ("grobot", "GROBOT", "agro_bot", "AGRO-BOT", "ivan.petrov", "912", GH):
+        for leaked in ("orthwind", "ORTHWIND", "north_wind", "NORTH-WIND", "ivan.petrov", "912", GH):
             self.assertNotIn(leaked, result.output)
         self.assertEqual(restore(result.output, vault), (SOURCE, []))
         compile(result.output, "<pseudonymized>", "exec")
 
     def test_equal_values_stay_equal_and_different_spellings_stay_apart(self):
-        result, _ = run('a = "Agrobot"\nb = "Agrobot"\nc = "agrobot"\n', python=True)
+        result, _ = run('a = "Northwind"\nb = "Northwind"\nc = "northwind"\n', python=True)
         values = [line.split(" = ")[1] for line in result.output.splitlines()]
         self.assertEqual(values[0], values[1])
         self.assertNotEqual(values[0], values[2])
@@ -81,16 +81,16 @@ class PythonContextTests(unittest.TestCase):
 
 class NameMatchingTests(unittest.TestCase):
     def test_spellings_separators_and_scripts(self):
-        text = "Agrobot AGROBOT agro_bot agro-bot Agro.bot AgroBot Агробот Аgrobot AgrobotClient"
+        text = "Northwind NORTHWIND north_wind north-wind North.wind NorthWind Нортвинд Nоrthwind NorthwindClient"
         result, _ = run(text)
         self.assertEqual(result.replaced, {"name": 9})
 
     def test_parts_of_other_words_are_left_alone(self):
-        result, _ = run("agronomy robotics agrobotanical")
-        self.assertEqual((result.decision, result.output), (ALLOW, "agronomy robotics agrobotanical"))
+        result, _ = run("northern windows northwindward")
+        self.assertEqual((result.decision, result.output), (ALLOW, "northern windows northwindward"))
 
     def test_invisible_characters_block(self):
-        self.assertEqual(run("Agro​bot")[0].reasons, ["invisible_or_bidi_characters"])
+        self.assertEqual(run("North​wind")[0].reasons, ["invisible_or_bidi_characters"])
 
 
 class PersonalDataTests(unittest.TestCase):
@@ -135,11 +135,11 @@ class SecretTests(unittest.TestCase):
 
 class VaultTests(unittest.TestCase):
     def test_deterministic_per_key_and_not_a_plain_hash(self):
-        a, b = run("Agrobot")[0].output, run("Agrobot")[0].output
-        c = run("Agrobot", key=b"another-synthetic-key-0123456789ab")[0].output
+        a, b = run("Northwind")[0].output, run("Northwind")[0].output
+        c = run("Northwind", key=b"another-synthetic-key-0123456789ab")[0].output
         self.assertEqual(a, b)
         self.assertNotEqual(a, c)
-        self.assertNotIn(hashlib.sha256(b"Agrobot").hexdigest()[:8], a)
+        self.assertNotIn(hashlib.sha256(b"Northwind").hexdigest()[:8], a)
 
     def test_short_key_rejected(self):
         with self.assertRaises(ValueError):
@@ -147,17 +147,17 @@ class VaultTests(unittest.TestCase):
 
     def test_token_already_in_input_blocks(self):
         vault = Vault(KEY)
-        first = pseudonymize("Agrobot", vault=vault, entities=CLIENT).output
-        result = pseudonymize(f"Agrobot and {first}", vault=Vault(KEY), entities=CLIENT)
+        first = pseudonymize("Northwind", vault=vault, entities=CLIENT).output
+        result = pseudonymize(f"Northwind and {first}", vault=Vault(KEY), entities=CLIENT)
         self.assertEqual(result.decision, BLOCK)
         self.assertIn("token_already_in_input", result.reasons)
 
     def test_restore_model_answer_and_report_invented_tokens(self):
-        result, vault = run("def agrobot_total(): ...", python=True)
+        result, vault = run("def northwind_total(): ...", python=True)
         token = result.output.split("def ")[1].split("_total")[0]
         answer = f"Rename to {token}_total_v2; also see client_a_deadbeef."
         self.assertEqual(restore(answer, vault),
-                         ("Rename to agrobot_total_v2; also see client_a_deadbeef.", ["client_a_deadbeef"]))
+                         ("Rename to northwind_total_v2; also see client_a_deadbeef.", ["client_a_deadbeef"]))
 
 
 if __name__ == "__main__":
@@ -176,11 +176,11 @@ def test_cli_round_trip_keeps_tokens_stable_and_files_private(tmp_path, monkeypa
     src = tmp_path / "billing.py"
     src.write_text(SOURCE, encoding="utf-8")
     first, second, back = tmp_path / "1.py", tmp_path / "2.py", tmp_path / "back.py"
-    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(first), "--entity", "client_a=Agrobot,Агробот") == 0
+    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(first), "--entity", "client_a=Northwind,Нортвинд") == 0
     assert "Python structure proven unchanged" in capsys.readouterr().err
-    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(second), "--entity", "client_a=Agrobot") == 0
+    assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--out", str(second), "--entity", "client_a=Northwind") == 0
     assert first.read_text() == second.read_text()
-    assert "grobot" not in first.read_text()
+    assert "orthwind" not in first.read_text()
     assert _cli(tmp_path, monkeypatch, "restore", "--in", str(first), "--out", str(back)) == 0
     assert back.read_text() == SOURCE
     for name in ("key", "vault.json"):
@@ -199,29 +199,29 @@ def test_cli_block_writes_nothing(tmp_path, monkeypatch, capsys):
 
 def test_cli_stdin_json_entities_file_and_text_mode(tmp_path, monkeypatch, capsys):
     entities = tmp_path / "entities.json"
-    entities.write_text(json.dumps({"entities": [{"label": "client_a", "aliases": ["Agrobot"]}]}), encoding="utf-8")
-    monkeypatch.setattr("sys.stdin", io.StringIO("Agrobot asked about invoices\n"))
+    entities.write_text(json.dumps({"entities": [{"label": "client_a", "aliases": ["Northwind"]}]}), encoding="utf-8")
+    monkeypatch.setattr("sys.stdin", io.StringIO("Northwind asked about invoices\n"))
     assert _cli(tmp_path, monkeypatch, "clean", "--entities", str(entities), "--json") == 0
     result = json.loads(capsys.readouterr().out)
     assert result["decision"] == TRANSFORM and result["output"].startswith("client_a_")
     src = tmp_path / "notes.py"
-    src.write_text("Agrobot (not valid Python\n", encoding="utf-8")
+    src.write_text("Northwind (not valid Python\n", encoding="utf-8")
     assert _cli(tmp_path, monkeypatch, "clean", "--in", str(src), "--entities", str(entities), "--text", "--json") == 0
     assert json.loads(capsys.readouterr().out)["structure_checked"] is False
 
 
 def test_cli_restore_reports_invented_tokens(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("sys.stdin", io.StringIO("Agrobot\n"))
-    assert _cli(tmp_path, monkeypatch, "clean", "--entity", "client_a=Agrobot") == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("Northwind\n"))
+    assert _cli(tmp_path, monkeypatch, "clean", "--entity", "client_a=Northwind") == 0
     token = capsys.readouterr().out.strip()
     monkeypatch.setattr("sys.stdin", io.StringIO(f"{token} and client_a_deadbeef\n"))
     assert _cli(tmp_path, monkeypatch, "restore", "--json") == 0
     result = json.loads(capsys.readouterr().out)
-    assert result == {"output": "Agrobot and client_a_deadbeef\n", "unknown_tokens": ["client_a_deadbeef"]}
+    assert result == {"output": "Northwind and client_a_deadbeef\n", "unknown_tokens": ["client_a_deadbeef"]}
 
 
 @pytest.mark.parametrize("args", [
-    ["clean", "--entity", "Client-A=Agrobot"], ["clean", "--entity", "client_a=ab"], ["clean", "--entity", "client_a="],
+    ["clean", "--entity", "Client-A=Northwind"], ["clean", "--entity", "client_a=ab"], ["clean", "--entity", "client_a="],
     ["restore"],  # no key yet
 ])
 def test_cli_refuses_bad_configuration(tmp_path, monkeypatch, capsys, args):
@@ -231,8 +231,8 @@ def test_cli_refuses_bad_configuration(tmp_path, monkeypatch, capsys, args):
 
 
 def test_cli_refuses_a_table_that_is_not_one_to_one(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("sys.stdin", io.StringIO("Agrobot\n"))
-    assert _cli(tmp_path, monkeypatch, "clean", "--entity", "client_a=Agrobot") == 0
+    monkeypatch.setattr("sys.stdin", io.StringIO("Northwind\n"))
+    assert _cli(tmp_path, monkeypatch, "clean", "--entity", "client_a=Northwind") == 0
     table = tmp_path / "home" / "vault.json"
     data = json.loads(table.read_text())
     data["entries"].append({**data["entries"][0], "original": "Other"})
